@@ -1,1 +1,1 @@
-# Движок ReAct-цикла: types, decision_maker (LLM до исполнения), action_executor (guards, execute, метрики).
+# Движок ReAct-цикла: types, decision_maker, action_executor, pipeline (линейный цикл run_subtask).
