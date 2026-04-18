@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -36,21 +36,10 @@ from agent.runtime.react_loop.telemetry import build_step_telemetry
 from agent.runtime.security import is_confirmation_required
 from agent.runtime.self_correction import build_correction_hint
 from agent.tools.browser_executor import BrowserToolExecutor
-
-
-@dataclass(frozen=True)
-class _LlmDecision:
-    model_route: ModelRoute
-    proposed: AgentAction
-    model_name: str
-    prompt_tokens: int
-    completion_tokens: int
-
-
-@dataclass(frozen=True)
-class _CaptchaIterationOutcome:
-    last_action: AgentAction
-    last_result: ActionResult
+from agent.runtime.react_loop.engine.types import (
+    _CaptchaIterationOutcome,
+    _LlmDecision,
+)
 
 
 class SubtaskReActLoop:
