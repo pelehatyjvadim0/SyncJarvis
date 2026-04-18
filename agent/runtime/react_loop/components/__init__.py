@@ -1,1 +1,1 @@
-# Изолированные подсистемы react_loop: captcha_solver, vision_recovery, grounding (шаг), fingerprinting.
+# Изолированные подсистемы react_loop: captcha/, vision_recovery, grounding, fingerprinting.

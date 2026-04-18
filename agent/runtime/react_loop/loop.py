@@ -29,7 +29,7 @@ from agent.runtime.react_loop.engine.types import (
     _CaptchaIterationOutcome,
     _LlmDecision,
 )
-from agent.runtime.react_loop.components.captcha_solver import handle_captcha_iteration
+from agent.runtime.react_loop.components.captcha import handle_captcha_iteration
 from agent.runtime.react_loop.components.fingerprinting import read_live_url_from_executor_or_none
 from agent.runtime.react_loop.components.grounding import attempt_grounding_step
 from agent.runtime.react_loop.components.vision_recovery import attempt_visual_recovery

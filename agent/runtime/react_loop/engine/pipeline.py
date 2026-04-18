@@ -9,7 +9,7 @@ from agent.models.plan import Subtask
 from agent.models.state import AgentState
 from agent.policies.base import BaseTaskPolicy
 from agent.runtime.memory import RuntimeMemory
-from agent.runtime.react_loop.components.captcha_detect import is_captcha_present
+from agent.runtime.react_loop.components.captcha import is_captcha_present
 from agent.runtime.react_loop.components.fingerprinting import (
     page_url_changed_since_stored,
     safe_current_fingerprint,
