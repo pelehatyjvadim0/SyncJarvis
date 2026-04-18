@@ -23,4 +23,3 @@ def parse_agent_action_json(raw_text: str) -> AgentAction:
             except Exception as exc:  # noqa: BLE001
                 raise ValueError(f"Не удалось разобрать JSON-ответ модели: {exc}") from exc
         raise ValueError("Не удалось найти валидный JSON в ответе модели")
-

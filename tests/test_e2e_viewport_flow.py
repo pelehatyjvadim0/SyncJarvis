@@ -19,7 +19,7 @@ from agent.runtime.memory import RuntimeMemory
 from agent.runtime.react_loop.config import LoopConfig
 from agent.runtime.react_loop.loop import SubtaskReActLoop, _LlmDecision
 from agent.tools.browser_executor import BrowserToolExecutor
-from agent.llm.model_router import ModelRoute
+from agent.llm.services.router import ModelRoute
 
 _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "viewport_scroll.html"
 

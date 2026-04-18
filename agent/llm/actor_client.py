@@ -10,7 +10,7 @@ from typing import Any
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
 
 from agent.config.settings import ActorPromptLimits
-from agent.llm.parsing import parse_agent_action_json
+from agent.llm.services.parser import parse_agent_action_json
 from agent.llm.prompts.actor import (
     build_actor_prompt,
     ordered_observation_for_actor_prompt,

@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable
 
 from agent.config.settings import AppSettings
 from agent.llm.actor_client import ActorLLMClient
-from agent.llm.model_router import ModelRoute, ModelRouter
+from agent.llm.services.router import ModelRoute, ModelRouter
 from agent.logging.history_logger import HistoryLogger
 from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
