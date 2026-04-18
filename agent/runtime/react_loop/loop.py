@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable
 
 from agent.config.settings import AppSettings
 from agent.llm.clients.actor import ActorLLMClient
-from agent.llm.services.router import ModelRoute, ModelRouter
+from agent.llm.services.router import ModelRouter
 from agent.logging.history_logger import HistoryLogger
 from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
@@ -28,7 +28,6 @@ from agent.runtime.anti_loop import apply_global_anti_loop
 from agent.runtime.memory import RuntimeMemory
 from agent.runtime.react_loop.captcha import is_captcha_present
 from agent.runtime.react_loop.config import LoopConfig, RunCostStats
-from agent.runtime.react_loop.page_fingerprint import snapshot_page_fingerprint
 from agent.runtime.react_loop.persistence import persist_step
 from agent.runtime.react_loop.step_utils import action_signature, format_runtime_context
 from agent.runtime.react_loop.telemetry import build_step_telemetry
@@ -39,6 +38,16 @@ from agent.runtime.react_loop.engine.types import (
     _CaptchaIterationOutcome,
     _LlmDecision,
 )
+from agent.runtime.react_loop.components.captcha_solver import handle_captcha_iteration
+from agent.runtime.react_loop.components.fingerprinting import (
+    before_fingerprint_if_mutating_action,
+    maybe_adjust_result_changed_after_mutating_action,
+    page_url_changed_since_stored,
+    read_live_url_from_executor_or_none,
+    safe_current_fingerprint,
+)
+from agent.runtime.react_loop.components.grounding import attempt_grounding_step
+from agent.runtime.react_loop.components.vision_recovery import attempt_visual_recovery
 from agent.runtime.react_loop.utils.observation_builder import (
     run_subtask_observation_collection_phase,
 )
@@ -94,12 +103,9 @@ class SubtaskReActLoop:
         self._last_grounding_fingerprint = None
 
     def _refresh_loop_url_snapshot(self) -> None:
-        try:
-            p = self.executor.page
-            if p and not p.is_closed():
-                self._loop_end_url = p.url
-        except Exception:
-            pass
+        url = read_live_url_from_executor_or_none(self.executor)
+        if url is not None:
+            self._loop_end_url = url
 
     def _append_context_history(self, item: dict[str, Any]) -> None:
         # Держит ограниченный хвост истории, чтобы не раздувать память в долгой сессии.
@@ -121,48 +127,17 @@ class SubtaskReActLoop:
         global_step: int,
         stream_callback: Callable[[str], Awaitable[None]],
     ) -> _CaptchaIterationOutcome | None:
-        # Если на странице капча - один wait, телеметрия CAPTCHA_WAIT, persist; иначе None.
-        if not await is_captcha_present(page, observation):
-            return None
-        await stream_callback(
-            "[CAPTCHA] Обнаружена капча. Ожидаю, пока пользователь решит её вручную."
-        )
-        wait_action = AgentAction(
-            thought="Обнаружена капча - ожидаю ручного решения пользователем.",
-            action="wait",
-            params={"seconds": 3.0},
-        )
-        wait_result = await self.executor.execute_action("wait", {"seconds": 3.0}, observation)
-        telemetry = build_step_telemetry(
+        return await handle_captcha_iteration(
+            page=page,
+            observation=observation,
             subtask=subtask,
             memory=memory,
-            observation=observation,
-            phase="CAPTCHA_WAIT",
-            action_signature=action_signature(wait_action),
-            progress_score=memory.last_progress_score,
-        )
-        await persist_step(
-            page=page,
-            history_logger=self.history_logger,
             global_step=global_step,
-            observation=observation,
-            llm_response=wait_action,
-            result=wait_result,
-            telemetry=telemetry,
+            stream_callback=stream_callback,
+            executor=self.executor,
+            history_logger=self.history_logger,
+            append_context_history=self._append_context_history,
         )
-        await stream_callback(f"[Шаг {global_step}] result={wait_result.message} | success={wait_result.success}")
-        self._append_context_history(
-            {
-                "step": global_step,
-                "mode": subtask.mode.value,
-                "goal": subtask.goal,
-                "action": wait_action.action,
-                "params": wait_action.params,
-                "result_success": wait_result.success,
-                "result_message": wait_result.message,
-            }
-        )
-        return _CaptchaIterationOutcome(last_action=wait_action, last_result=wait_result)
 
     async def _make_decision(
         self,
@@ -348,36 +323,21 @@ class SubtaskReActLoop:
         stream_callback: Callable[[str], Awaitable[None]],
         vision_reason: str = "search_miss",
     ) -> tuple[AgentAction, ActionResult, _LlmDecision]:
-        # Скриншот + multimodal LLM: click_xy/scroll/wait (поиск или застревание на click).
-        vision_path = Path(self.config.history_dir) / f"vision_probe_{global_step:03d}.png"
-        await page.screenshot(path=str(vision_path), full_page=False)
-        vision = await self.actor.decide_visual_recovery(
-            subtask_goal=subtask.goal,
-            screenshot_path=str(vision_path),
-            last_error=last_action_result.message,
-            model_override=self.config.model_cheap,
-            max_transport_retries=self._settings.llm_transport_max_retries,
+        return await attempt_visual_recovery(
+            subtask=subtask,
+            observation=observation,
+            memory=memory,
+            last_action_result=last_action_result,
+            global_step=global_step,
+            page=page,
+            stream_callback=stream_callback,
+            vision_reason=vision_reason,
+            history_dir=Path(self.config.history_dir),
+            model_cheap=self.config.model_cheap,
+            settings=self._settings,
+            actor=self.actor,
+            executor=self.executor,
         )
-        action_name = vision.action if vision.action in {"click_xy", "scroll", "wait"} else "wait"
-        params = vision.params if isinstance(vision.params, dict) else {}
-        guarded = AgentAction(
-            thought=f"Vision recovery: {vision.reason or 'попытка восстановить управление по скриншоту'}",
-            action=action_name,
-            params=params,
-        )
-        await stream_callback(
-            f"[VISION] trigger={vision_reason}, action={guarded.action}, params={guarded.params}, "
-            f"model_reason={vision.reason or '-'}"
-        )
-        result = await self.executor.execute_action(guarded.action, guarded.params, observation)
-        llm = _LlmDecision(
-            model_route=ModelRoute(tier="cheap", model=self.config.model_cheap, reason="Vision recovery"),
-            proposed=guarded,
-            model_name=vision.model_used,
-            prompt_tokens=vision.prompt_tokens,
-            completion_tokens=vision.completion_tokens,
-        )
-        return guarded, result, llm
 
     async def _attempt_grounding(
         self,
@@ -394,59 +354,26 @@ class SubtaskReActLoop:
         stream_callback: Callable[[str], Awaitable[None]],
         current_fingerprint: str,
     ) -> tuple[AgentAction, ActionResult, _LlmDecision]:
-        # Скрин + multimodal: цель + список element_index; одно действие, затем тот же путь fingerprint/changed, что у основного шага.
-        if should_apply_grounding_search_wait(last_action, last_action_result, subtask.mode):
-            await asyncio.sleep(self._settings.grounding_min_wait_seconds)
-        shot = Path(self.config.history_dir) / f"grounding_{global_step:03d}.png"
-        await page.screenshot(path=str(shot), full_page=False)
-        compact = serialize_observation_window_for_actor_prompt(obs_window, self.actor.prompt_limits)
-        compact_json = json.dumps(compact, ensure_ascii=False)
-        gd = await self.actor.decide_grounding_action(
-            subtask_goal=subtask.goal,
-            task_mode=subtask.mode,
-            screenshot_path=str(shot),
-            compact_observation_json=compact_json,
-            model_override=self.config.model_cheap,
-            max_transport_retries=self._settings.llm_transport_max_retries,
+        return await attempt_grounding_step(
+            subtask=subtask,
+            observation=observation,
+            obs_window=obs_window,
+            memory=memory,
+            last_action=last_action,
+            last_action_result=last_action_result,
+            global_step=global_step,
+            page=page,
+            stream_callback=stream_callback,
+            current_fingerprint=current_fingerprint,
+            settings=self._settings,
+            model_cheap=self.config.model_cheap,
+            history_dir=Path(self.config.history_dir),
+            actor=self.actor,
+            executor=self.executor,
+            apply_guards=lambda resolved: self._apply_guards(policy, subtask.goal, observation, resolved, memory),
+            refine_self_check_repeat_click=lambda g: self._refine_self_check_repeat_click(g, last_action, memory),
+            on_grounding_fingerprint_committed=lambda fp: setattr(self, "_last_grounding_fingerprint", fp),
         )
-        proposed = gd.action
-        resolved, idx_warn = resolve_actor_element_index(proposed, obs_window)
-        if idx_warn:
-            await stream_callback(idx_warn)
-        guarded = self._apply_guards(policy, subtask.goal, observation, resolved, memory)
-        guarded = self._refine_self_check_repeat_click(guarded, last_action, memory)
-        await stream_callback(
-            f"[GROUNDING] action={guarded.action} | params={guarded.params} | "
-            f"model={gd.model_used} | tokens in/out={gd.prompt_tokens}/{gd.completion_tokens}"
-        )
-        before_fp: str | None = None
-        if guarded.action in ("click", "navigate", "type"):
-            try:
-                before_fp = await snapshot_page_fingerprint(page)
-            except Exception:
-                before_fp = None
-        result = await self.executor.execute_action(guarded.action, guarded.params, observation)
-        if (
-            before_fp is not None
-            and result.success
-            and guarded.action in ("click", "navigate", "type")
-        ):
-            try:
-                await asyncio.sleep(0.1)
-                after_fp = await snapshot_page_fingerprint(page)
-                if after_fp == before_fp:
-                    result = result.model_copy(update={"changed": False})
-            except Exception:
-                pass
-        llm = _LlmDecision(
-            model_route=ModelRoute(tier="cheap", model=self.config.model_cheap, reason="Grounding"),
-            proposed=guarded,
-            model_name=gd.model_used,
-            prompt_tokens=gd.prompt_tokens,
-            completion_tokens=gd.completion_tokens,
-        )
-        self._last_grounding_fingerprint = current_fingerprint
-        return guarded, result, llm
 
     async def _update_performance_metrics(
         self,
@@ -603,7 +530,7 @@ class SubtaskReActLoop:
             global_step = step_offset + executed_steps
             # Получаем текущую страницу для взаимодействия.
             page = self._require_page()
-            url_changed_since_last = self._loop_end_url is not None and page.url != self._loop_end_url
+            url_changed_since_last = page_url_changed_since_stored(self._loop_end_url, page.url)
 
             _obs_phase = await run_subtask_observation_collection_phase(
                 page,
@@ -723,10 +650,7 @@ class SubtaskReActLoop:
                     # Логируем ошибку самопроверки, не прерываем цикл.
                     await stream_callback(f"[SELF-CHECK] Пропускаю из-за ошибки: {exc}")
 
-            try:
-                current_fp = await snapshot_page_fingerprint(page)
-            except Exception:
-                current_fp = ""
+            current_fp = await safe_current_fingerprint(page)
             run_grounding = False
             gr_reason = ""
             if not self._settings.observation_fusion_multimodal:
@@ -960,29 +884,18 @@ class SubtaskReActLoop:
                 )
 
             # Инициализируем fingerprint (отпечаток страницы) для последующего сравнения до/после действия, если действие изменяющее.
-            before_fp: str | None = None
-            if guarded.action in ("click", "navigate", "type"):
-                try:
-                    before_fp = await snapshot_page_fingerprint(page)
-                except Exception:
-                    before_fp = None
+            before_fp = await before_fingerprint_if_mutating_action(page, guarded.action)
 
             # Выполняем конечное действие на странице (например, клик, ввод текста).
             result = await self.executor.execute_action(guarded.action, guarded.params, observation)
 
             # Сравниваем fingerprint страницы до и после действия — если ничего не изменилось, помечаем результат как не изменивший состояние.
-            if (
-                before_fp is not None
-                and result.success
-                and guarded.action in ("click", "navigate", "type")
-            ):
-                try:
-                    await asyncio.sleep(0.1)  # Ждем, чтобы страница успела обновиться.
-                    after_fp = await snapshot_page_fingerprint(page)
-                    if after_fp == before_fp:
-                        result = result.model_copy(update={"changed": False})
-                except Exception:
-                    pass
+            result = await maybe_adjust_result_changed_after_mutating_action(
+                page,
+                result,
+                guarded_action=guarded.action,
+                before_fp=before_fp,
+            )
 
             # Обновляем метрики, проверяем условия завершения и выполняем прагматический возврат, если нужно.
             terminal = await self._update_performance_metrics(
