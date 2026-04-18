@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import json
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -14,24 +11,24 @@ from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
 from agent.models.plan import Subtask
 from agent.models.state import AgentState
-from agent.llm.prompts.actor import (
-    ordered_observation_for_actor_prompt,
-    resolve_actor_element_index,
-    serialize_observation_window_for_actor_prompt,
-)
-from agent.runtime.react_loop.grounding import (
-    should_apply_grounding_search_wait,
-    should_run_grounding,
-)
+from agent.llm.prompts.actor import ordered_observation_for_actor_prompt
+from agent.runtime.react_loop.grounding import should_run_grounding
 from agent.policies.base import BaseTaskPolicy
-from agent.runtime.anti_loop import apply_global_anti_loop
 from agent.runtime.memory import RuntimeMemory
 from agent.runtime.react_loop.captcha import is_captcha_present
 from agent.runtime.react_loop.config import LoopConfig, RunCostStats
-from agent.runtime.react_loop.persistence import persist_step
+from agent.runtime.react_loop.engine.action_executor import (
+    apply_guards,
+    refine_self_check_repeat_click,
+    run_guarded_action_with_fingerprint_and_metrics,
+    update_performance_metrics,
+)
+from agent.runtime.react_loop.engine.decision_maker import (
+    handle_llm_error,
+    make_decision,
+    resolve_decision_element_indexes,
+)
 from agent.runtime.react_loop.step_utils import action_signature, format_runtime_context
-from agent.runtime.react_loop.telemetry import build_step_telemetry
-from agent.runtime.security import is_confirmation_required
 from agent.runtime.self_correction import build_correction_hint
 from agent.tools.browser_executor import BrowserToolExecutor
 from agent.runtime.react_loop.engine.types import (
@@ -40,8 +37,6 @@ from agent.runtime.react_loop.engine.types import (
 )
 from agent.runtime.react_loop.components.captcha_solver import handle_captcha_iteration
 from agent.runtime.react_loop.components.fingerprinting import (
-    before_fingerprint_if_mutating_action,
-    maybe_adjust_result_changed_after_mutating_action,
     page_url_changed_since_stored,
     read_live_url_from_executor_or_none,
     safe_current_fingerprint,
@@ -152,65 +147,20 @@ class SubtaskReActLoop:
         global_step: int,
         page,
     ) -> _LlmDecision:
-        # Выбор модели (ModelRouter) и запрос к ActorLLMClient; сетевые ретраи из настроек.
-        runtime_context = format_runtime_context(memory)
-        model_route = self.model_router.select(
-            task_mode=subtask.mode,
-            last_action_result=last_action_result,
-            memory_view=memory.guard_view(),
-            current_step=global_step,
-        )
-        if model_route.tier == "smart":
-            memory.last_smart_step = global_step
-        if self._settings.observation_fusion_multimodal:
-            if should_apply_grounding_search_wait(last_action, last_action_result, subtask.mode):
-                await asyncio.sleep(self._settings.grounding_min_wait_seconds)
-            shot = Path(self.config.history_dir) / f"fusion_{global_step:03d}.png"
-            await page.screenshot(path=str(shot), full_page=False)
-            compact = serialize_observation_window_for_actor_prompt(obs_window, self.actor.prompt_limits)
-            compact_json = json.dumps(compact, ensure_ascii=False)
-            prev_status = "Нет предыдущего результата"
-            if last_action_result:
-                prev_status = (
-                    f"success={last_action_result.success}, changed={last_action_result.changed}, "
-                    f"message={last_action_result.message}, error={last_action_result.error}"
-                )
-            decision = await self.actor.decide_fusion_step_action(
-                subtask_goal=subtask.goal,
-                task_mode=subtask.mode,
-                mode_rules=policy.mode_rules(),
-                runtime_context=runtime_context[:400],
-                last_step_summary=prev_status,
-                self_check_hint=(memory.self_check_hint or "")[:400],
-                screenshot_path=str(shot),
-                compact_observation_json=compact_json,
-                model_override=model_route.model,
-                max_transport_retries=self._settings.llm_transport_max_retries,
-            )
-            return _LlmDecision(
-                model_route=model_route,
-                proposed=decision.action,
-                model_name=decision.model_used,
-                prompt_tokens=decision.prompt_tokens,
-                completion_tokens=decision.completion_tokens,
-            )
-        decision = await self.actor.decide_action(
-            subtask_goal=subtask.goal,
-            task_mode=subtask.mode,
+        return await make_decision(
+            subtask=subtask,
+            policy=policy,
             observation=observation,
+            obs_window=obs_window,
+            last_action=last_action,
             last_action_result=last_action_result,
-            runtime_context=runtime_context,
-            mode_rules=policy.mode_rules(),
-            model_override=model_route.model,
-            max_transport_retries=self._settings.llm_transport_max_retries,
-            self_check_hint=(memory.self_check_hint or "")[:400],
-        )
-        return _LlmDecision(
-            model_route=model_route,
-            proposed=decision.action,
-            model_name=decision.model_used,
-            prompt_tokens=decision.prompt_tokens,
-            completion_tokens=decision.completion_tokens,
+            memory=memory,
+            global_step=global_step,
+            page=page,
+            actor=self.actor,
+            model_router=self.model_router,
+            settings=self._settings,
+            config=self.config,
         )
 
     async def _handle_llm_error(
@@ -225,36 +175,17 @@ class SubtaskReActLoop:
         page,
         stream_callback: Callable[[str], Awaitable[None]],
     ) -> tuple[AgentAction, ActionResult]:
-        # Невалидный JSON от актора - fallback политики, REPLAN-телеметрия, persist, стрим.
-        result = ActionResult(
-            success=False,
-            message="Ответ модели невалиден - используется fallback.",
-            changed=False,
-            error=str(exc),
-        )
-        action = policy.fallback_action(subtask.goal, observation, reason="Невалидный JSON модели")
-        telemetry = build_step_telemetry(
+        return await handle_llm_error(
+            exc,
             subtask=subtask,
+            policy=policy,
+            observation=observation,
             memory=memory,
-            observation=observation,
-            phase="REPLAN",
-            action_signature=action_signature(action),
-            progress_score=memory.last_progress_score,
-            model_tier="fallback",
-            model_used="fallback_action",
-            estimated_cost_usd=0.0,
-        )
-        await persist_step(
-            page=page,
-            history_logger=self.history_logger,
             global_step=global_step,
-            observation=observation,
-            llm_response=action,
-            result=result,
-            telemetry=telemetry,
+            page=page,
+            stream_callback=stream_callback,
+            history_logger=self.history_logger,
         )
-        await stream_callback(f"[Шаг {global_step}] result={result.message} | success={result.success}")
-        return action, result
 
     def _apply_guards(
         self,
@@ -264,12 +195,7 @@ class SubtaskReActLoop:
         proposed: AgentAction,
         memory: RuntimeMemory,
     ) -> AgentAction:
-        # Цепочка anti_loop_guard (режим) - apply_global_anti_loop - refine_after_global_anti_loop.
-        guarded = policy.anti_loop_guard(
-            subtask_goal, observation, proposed, memory_view=memory.guard_view()
-        )
-        guarded = apply_global_anti_loop(guarded, memory)
-        return policy.refine_after_global_anti_loop(guarded, memory)
+        return apply_guards(policy, subtask_goal, observation, proposed, memory)
 
     @staticmethod
     def _refine_self_check_repeat_click(
@@ -277,21 +203,7 @@ class SubtaskReActLoop:
         last_action: AgentAction | None,
         memory: RuntimeMemory,
     ) -> AgentAction:
-        # Если самопроверка оставила подсказку и модель снова кликает тот же ax_id — скролл, подсказку сбрасываем.
-        if not (memory.self_check_hint or "").strip():
-            return proposed
-        if proposed.action != "click" or last_action is None or last_action.action != "click":
-            return proposed
-        pa = proposed.params.get("ax_id")
-        la = last_action.params.get("ax_id")
-        if not (isinstance(pa, str) and isinstance(la, str) and pa and pa == la):
-            return proposed
-        memory.self_check_hint = ""
-        return AgentAction(
-            thought="Самопроверка: цель не достигнута — не повторяю тот же ax_id, делаю scroll.",
-            action="scroll",
-            params={"direction": "down", "amount": 600},
-        )
+        return refine_self_check_repeat_click(proposed, last_action, memory)
 
     @staticmethod
     def _should_visual_stagnation_recovery(
@@ -370,8 +282,8 @@ class SubtaskReActLoop:
             history_dir=Path(self.config.history_dir),
             actor=self.actor,
             executor=self.executor,
-            apply_guards=lambda resolved: self._apply_guards(policy, subtask.goal, observation, resolved, memory),
-            refine_self_check_repeat_click=lambda g: self._refine_self_check_repeat_click(g, last_action, memory),
+            apply_guards=lambda resolved: apply_guards(policy, subtask.goal, observation, resolved, memory),
+            refine_self_check_repeat_click=lambda g: refine_self_check_repeat_click(g, last_action, memory),
             on_grounding_fingerprint_committed=lambda fp: setattr(self, "_last_grounding_fingerprint", fp),
         )
 
@@ -391,89 +303,23 @@ class SubtaskReActLoop:
         page,
         stream_callback: Callable[[str], Awaitable[None]],
     ) -> AgentState | None:
-        # Прогресс и стагнация в памяти, стоимость, телеметрия EXECUTION, persist, регистрация cost_stats, терминальные статусы.
-        progress = policy.compute_progress(observation, guarded, result)
-        if guarded.action == "type" and not result.success and result.reason_code == "target_not_editable":
-            memory.type_not_editable_streak += 1
-            await stream_callback(f"[GUARD] reason=target_not_editable | streak={memory.type_not_editable_streak}")
-        elif guarded.action == "type":
-            memory.type_not_editable_streak = 0
-        if (
-            guarded.action == "type"
-            and not result.success
-            and result.reason_code == "search_input_not_found"
-        ):
-            memory.search_target_miss_streak += 1
-            await stream_callback(f"[GUARD] reason=search_input_not_found | streak={memory.search_target_miss_streak}")
-        elif guarded.action in {"type", "click", "navigate"} and result.success:
-            memory.search_target_miss_streak = 0
-        if progress <= memory.last_progress_score:
-            memory.stagnation_steps += 1
-        else:
-            memory.stagnation_steps = 0
-        memory.last_progress_score = progress
-
-        est_cost = self.config.pricing.estimate_cost_usd(
-            prompt_tokens=llm.prompt_tokens,
-            completion_tokens=llm.completion_tokens,
-            tier=llm.model_route.tier,
-        )
-        telemetry = build_step_telemetry(
+        return await update_performance_metrics(
             subtask=subtask,
+            policy=policy,
             memory=memory,
+            cost_stats=cost_stats,
             observation=observation,
-            phase="EXECUTION",
-            action_signature=signature,
-            progress_score=progress,
-            model_tier=llm.model_route.tier,
-            model_used=llm.model_name or llm.model_route.model,
-            prompt_tokens=llm.prompt_tokens,
-            completion_tokens=llm.completion_tokens,
-            estimated_cost_usd=est_cost,
-        )
-        await persist_step(
-            page=page,
-            history_logger=self.history_logger,
-            global_step=global_step,
-            observation=observation,
-            llm_response=guarded,
+            guarded=guarded,
             result=result,
-            telemetry=telemetry,
+            llm=llm,
+            signature=signature,
+            global_step=global_step,
+            page=page,
+            stream_callback=stream_callback,
+            config=self.config,
+            history_logger=self.history_logger,
+            append_context_history=self._append_context_history,
         )
-        cost_stats.register(tier=llm.model_route.tier, cost_usd=telemetry.estimated_cost_usd)
-
-        await stream_callback(
-            f"[Шаг {global_step}] result={result.message} | success={result.success} | "
-            f"estimated_cost_usd={telemetry.estimated_cost_usd:.6f}"
-        )
-        self._append_context_history(
-            {
-                "step": global_step,
-                "mode": subtask.mode.value,
-                "goal": subtask.goal,
-                "thought": guarded.thought,
-                "action": guarded.action,
-                "params": guarded.params,
-                "result_success": result.success,
-                "result_message": result.message,
-                "reason_code": result.reason_code,
-                "cost_usd": round(telemetry.estimated_cost_usd, 6),
-            }
-        )
-
-        if result.state == AgentState.AWAITING_USER_CONFIRMATION:
-            return AgentState.AWAITING_USER_CONFIRMATION
-
-        force_done, force_reason = policy.check_force_finish_after_execution(guarded, result, memory)
-        if force_done:
-            memory.done_reason = force_reason
-            return AgentState.FINISHED
-
-        if guarded.action == "finish":
-            memory.done_reason = "LLM явно завершил подзадачу."
-            return AgentState.FINISHED
-
-        return None
 
     # Главная корутина выполнения подзадачи. Здесь происходит основной цикл шагов агента.
     # Параметры resume_* нужны для возобновления после приостановки на опасном действии.
@@ -821,10 +667,7 @@ class SubtaskReActLoop:
                     global_step=global_step,
                     page=page,
                 )
-                resolved_proposed, idx_warn = resolve_actor_element_index(llm.proposed, obs_window)
-                if idx_warn:
-                    await stream_callback(idx_warn)
-                llm = replace(llm, proposed=resolved_proposed)
+                llm = await resolve_decision_element_indexes(llm, obs_window, stream_callback)
             except ValueError as exc:
                 # Если возникла ошибка при генерации действия LLM, обрабатываем её через специальный обработчик.
                 last_action, last_action_result = await self._handle_llm_error(
@@ -840,77 +683,21 @@ class SubtaskReActLoop:
                 self._refresh_loop_url_snapshot()
                 continue
 
-            # Применяем защитные политики и фильтры к предложенному LLM действию.
-            guarded = self._apply_guards(policy, subtask.goal, observation, llm.proposed, memory)
-            after_policy = guarded
-            # Дополнительное уточнение: если был повторный клик (self_check), корректируем действие.
-            guarded = self._refine_self_check_repeat_click(guarded, last_action, memory)
-            # Логируем, если произошло изменение в действиях вследствие этой корректировки.
-            if guarded.action != after_policy.action or guarded.params != after_policy.params:
-                ax_dbg = after_policy.params.get("ax_id", "")
-                await stream_callback(
-                    f"[GUARD] reason=self_check_repeat_click | ax_id={ax_dbg}"
-                )
-            # Если политика/глобальные guard-и изменили действие по сравнению с оригинальным LLM-ответом, логируем это.
-            if after_policy.action != llm.proposed.action or after_policy.params != llm.proposed.params:
-                await stream_callback(
-                    "[GUARD] reason=policy_or_global_guard_changed_action | "
-                    f"type_not_editable_streak={memory.type_not_editable_streak} | "
-                    f"search_target_miss_streak={memory.search_target_miss_streak}"
-                )
-            # Формируем компактную уникальную подпись действия для отслеживания повторов.
-            sig = action_signature(guarded)
-            # Обновляем хранилище подписей, чтобы видеть, какие действия уже были осуществлены.
-            memory.update_signature(sig)
-            # Фиксируем факт выполнения действия (для политики и анализа LLM).
-            memory.update_after_action(guarded)
-
-            # Обрезаем поле "thought" и подготавливаем его для лога — можно анализировать reasoning LLM.
-            thought_text = (guarded.thought or "").strip()
-            # Выводим подробный лог о рассуждении и предстоящем действии с моделью и токенами.
-            await stream_callback(
-                "\n[THOUGHT]\n"
-                f"{thought_text}\n"
-                "────────────────────────────────────────────────\n"
-                f"[Шаг {global_step}] [{subtask.mode.value}] model={llm.model_route.tier}:"
-                f"{llm.model_name or llm.model_route.model} | reason={llm.model_route.reason} | "
-                f"tokens(in={llm.prompt_tokens}, out={llm.completion_tokens}) | "
-                f"action={guarded.action} | params={guarded.params}"
-            )
-            # Если действие помечено как опасное — уведомляем пользователя и требуем подтверждение.
-            if is_confirmation_required(guarded):
-                await stream_callback(
-                    "[SECURITY] Действие помечено как опасное, требуется подтверждение пользователя."
-                )
-
-            # Инициализируем fingerprint (отпечаток страницы) для последующего сравнения до/после действия, если действие изменяющее.
-            before_fp = await before_fingerprint_if_mutating_action(page, guarded.action)
-
-            # Выполняем конечное действие на странице (например, клик, ввод текста).
-            result = await self.executor.execute_action(guarded.action, guarded.params, observation)
-
-            # Сравниваем fingerprint страницы до и после действия — если ничего не изменилось, помечаем результат как не изменивший состояние.
-            result = await maybe_adjust_result_changed_after_mutating_action(
-                page,
-                result,
-                guarded_action=guarded.action,
-                before_fp=before_fp,
-            )
-
-            # Обновляем метрики, проверяем условия завершения и выполняем прагматический возврат, если нужно.
-            terminal = await self._update_performance_metrics(
-                subtask=subtask,
-                policy=policy,
-                memory=memory,
-                cost_stats=cost_stats,
-                observation=observation,
-                guarded=guarded,
-                result=result,
+            guarded, result, llm, terminal = await run_guarded_action_with_fingerprint_and_metrics(
                 llm=llm,
-                signature=sig,
-                global_step=global_step,
+                last_action=last_action,
+                policy=policy,
+                subtask=subtask,
+                observation=observation,
+                memory=memory,
                 page=page,
                 stream_callback=stream_callback,
+                global_step=global_step,
+                cost_stats=cost_stats,
+                executor=self.executor,
+                config=self.config,
+                history_logger=self.history_logger,
+                append_context_history=self._append_context_history,
             )
             # Сохраняем последнее выполненное действие и результат.
             last_action_result = result
