@@ -9,9 +9,9 @@ from agent.models.plan import Subtask
 from agent.runtime.memory import RuntimeMemory
 from agent.runtime.react_loop.captcha import is_captcha_present
 from agent.runtime.react_loop.engine.types import _CaptchaIterationOutcome
-from agent.runtime.react_loop.persistence import persist_step
 from agent.runtime.react_loop.step_utils import action_signature
-from agent.runtime.react_loop.telemetry import build_step_telemetry
+from agent.runtime.react_loop.utils.persistence import persist_step
+from agent.runtime.react_loop.utils.telemetry import build_step_telemetry
 from agent.tools.browser_executor import BrowserToolExecutor
 
 

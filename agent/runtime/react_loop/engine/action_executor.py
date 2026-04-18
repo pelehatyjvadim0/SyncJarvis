@@ -18,9 +18,9 @@ from agent.runtime.react_loop.components.fingerprinting import (
 )
 from agent.runtime.react_loop.config import LoopConfig, RunCostStats
 from agent.runtime.react_loop.engine.types import _LlmDecision
-from agent.runtime.react_loop.persistence import persist_step
 from agent.runtime.react_loop.step_utils import action_signature
-from agent.runtime.react_loop.telemetry import build_step_telemetry
+from agent.runtime.react_loop.utils.persistence import persist_step
+from agent.runtime.react_loop.utils.telemetry import build_step_telemetry
 from agent.runtime.security import is_confirmation_required
 from agent.tools.browser_executor import BrowserToolExecutor
 

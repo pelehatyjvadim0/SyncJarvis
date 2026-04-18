@@ -1,1 +1,1 @@
-# Утилиты react_loop (телеметрия, персистенция, observation — по мере рефакторинга).
+# Утилиты react_loop: observation_builder, telemetry, persistence и др.
