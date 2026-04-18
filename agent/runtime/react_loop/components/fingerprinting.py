@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from agent.models.action import ActionResult
-from agent.runtime.react_loop.page_fingerprint import snapshot_page_fingerprint
+from agent.runtime.react_loop.utils.page_fingerprint import snapshot_page_fingerprint
 from agent.tools.browser_executor import BrowserToolExecutor
 
 

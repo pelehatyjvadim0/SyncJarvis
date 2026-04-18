@@ -21,7 +21,7 @@ from agent.policies.base import BaseTaskPolicy
 from agent.runtime.memory import RuntimeMemory
 from agent.runtime.react_loop.config import LoopConfig
 from agent.runtime.react_loop.engine.types import _LlmDecision
-from agent.runtime.react_loop.grounding import should_apply_grounding_search_wait
+from agent.runtime.react_loop.utils.grounding import should_apply_grounding_search_wait
 from agent.runtime.react_loop.step_utils import action_signature, format_runtime_context
 from agent.runtime.react_loop.utils.persistence import persist_step
 from agent.runtime.react_loop.utils.telemetry import build_step_telemetry

@@ -1,1 +1,1 @@
-# Утилиты react_loop: observation_builder, telemetry, persistence и др.
+"""Внутренние утилиты react_loop (observation, telemetry, persistence, captcha, grounding, fingerprint)."""

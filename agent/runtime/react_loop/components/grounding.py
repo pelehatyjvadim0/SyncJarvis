@@ -18,7 +18,7 @@ from agent.runtime.react_loop.components.fingerprinting import (
     maybe_adjust_result_changed_after_mutating_action,
 )
 from agent.runtime.react_loop.engine.types import _LlmDecision
-from agent.runtime.react_loop.grounding import should_apply_grounding_search_wait
+from agent.runtime.react_loop.utils.grounding import should_apply_grounding_search_wait
 from agent.tools.browser_executor import BrowserToolExecutor
 
 
