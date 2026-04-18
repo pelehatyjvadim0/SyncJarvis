@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 
 from agent.config.settings import ActorPromptLimits
+from agent.llm.prompts.templates import (
+    actor_decision_json_role_header,
+    actor_general_rules_section,
+    actor_visibility_section,
+)
 from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
 from agent.models.task import TaskMode
@@ -135,9 +140,7 @@ def build_actor_prompt(
         )
 
     return (
-        "Ты агент веб-автоматизации.\n"
-        "Верни СТРОГО JSON: thought, action, params.\n"
-        "Не используй markdown.\n\n"
+        f"{actor_decision_json_role_header()}"
         f"Режим: {task_mode.value}\n"
         f"Цель подзадачи:\n{subtask_goal}\n\n"
         f"Результат прошлого шага:\n{prev_status}\n\n"
@@ -146,18 +149,6 @@ def build_actor_prompt(
         f"Правила режима:\n{mode_rules}\n\n"
         "Интерактивные элементы:\n"
         f"{json.dumps(compact_observation, ensure_ascii=False)}\n\n"
-        "Видимость:\n"
-        "- В списке только элементы, попадающие в текущую видимую область (viewport) страницы.\n"
-        "- Если нужной кнопки или поля нет в списке, вероятно оно ниже или выше — сначала сделай scroll, затем снова ориентируйся на новый список.\n\n"
-        "Общие правила:\n"
-        "- Используй только: navigate, click, type, scroll, wait, finish.\n"
-        "- Для click и type обязательно передай целое params.element_index — значение из поля element_index "
-        "в списке интерактивных элементов выше. Номера действуют только для этого списка в этом сообщении; "
-        "на следующем шаге список будет другим — смотри только на новый список.\n"
-        "- Обратная совместимость: если передаёшь только params.ax_id без element_index — допустимо, но предпочтительнее element_index.\n"
-        "- Для action=type передавай текст только в params.text (не в params.value).\n"
-        "- Если нужно отправить форму после ввода, используй params.press_enter=true или отдельный click по кнопке поиска.\n"
-        "- Не используй CSS/XPath.\n"
-        "- Если прошлый шаг не дал прогресса, выбери альтернативу.\n"
-        "- Если элементов много, выбирай только самый релевантный к цели."
+        f"{actor_visibility_section()}"
+        f"{actor_general_rules_section()}"
     )
