@@ -11,7 +11,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpe
 
 from agent.config.settings import ActorPromptLimits
 from agent.llm.parsing import parse_agent_action_json
-from agent.llm.prompts.actor_prompts import (
+from agent.llm.prompts.actor import (
     build_actor_prompt,
     ordered_observation_for_actor_prompt,
     serialize_observation_window_for_actor_prompt,

@@ -4,7 +4,7 @@ import json
 
 from openai import AsyncOpenAI
 
-from agent.llm.prompts.planner_prompts import build_planner_prompt
+from agent.llm.prompts.planner import build_planner_prompt
 from agent.planner.plan_schema import PlannerResponse
 
 

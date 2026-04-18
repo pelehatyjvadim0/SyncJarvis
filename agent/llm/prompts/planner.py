@@ -20,4 +20,3 @@ def build_planner_prompt(user_goal: str, max_subtasks: int) -> str:
         "Пример корректного начала ответа: {\"thought\":\"...\",\"subtasks\":[...]}\n\n"
         f"Цель пользователя:\n{user_goal}"
     )
-

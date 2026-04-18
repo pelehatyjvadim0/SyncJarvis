@@ -5,7 +5,7 @@ import unittest
 from agent.config.settings import ActorPromptLimits
 from agent.models.action import AgentAction
 from agent.models.observation import InteractiveElement
-from agent.llm.prompts.actor_prompts import (
+from agent.llm.prompts.actor import (
     ordered_observation_for_actor_prompt,
     resolve_actor_element_index,
     serialize_observation_window_for_actor_prompt,
