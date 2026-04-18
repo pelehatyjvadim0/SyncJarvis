@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Viewport E2E fixture</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #top { padding: 16px; }
+    .spacer { height: 120vh; background: linear-gradient(#eee, #ddd); }
+    #bottom { padding: 24px; }
+  </style>
+</head>
+<body>
+  <div id="top">
+    <button type="button" name="action" aria-label="Кнопка в зоне видимости">In viewport</button>
+  </div>
+  <div class="spacer" aria-hidden="true"></div>
+  <div id="bottom">
+    <button type="button" name="action" aria-label="Кнопка ниже фолда">Below the fold</button>
+  </div>
+</body>
+</html>
