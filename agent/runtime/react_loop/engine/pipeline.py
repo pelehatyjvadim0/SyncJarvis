@@ -9,7 +9,7 @@ from agent.models.plan import Subtask
 from agent.models.state import AgentState
 from agent.policies.base import BaseTaskPolicy
 from agent.runtime.memory import RuntimeMemory
-from agent.runtime.react_loop.utils.captcha import is_captcha_present
+from agent.runtime.react_loop.components.captcha_detect import is_captcha_present
 from agent.runtime.react_loop.components.fingerprinting import (
     page_url_changed_since_stored,
     safe_current_fingerprint,
@@ -17,7 +17,7 @@ from agent.runtime.react_loop.components.fingerprinting import (
 from agent.runtime.react_loop.config import RunCostStats
 from agent.runtime.react_loop.engine.action_executor import run_guarded_action_with_fingerprint_and_metrics
 from agent.runtime.react_loop.engine.decision_maker import resolve_decision_element_indexes
-from agent.runtime.react_loop.utils.grounding import should_run_grounding
+from agent.runtime.react_loop.components.grounding import should_run_grounding
 from agent.runtime.self_correction import build_correction_hint
 from agent.runtime.react_loop.step_utils import action_signature, format_runtime_context
 from agent.runtime.react_loop.utils.observation_builder import run_subtask_observation_collection_phase

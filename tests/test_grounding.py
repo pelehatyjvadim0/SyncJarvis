@@ -6,7 +6,7 @@ from dataclasses import replace
 from agent.config.settings import ActorPromptLimits, AgentPricing, AppSettings
 from agent.models.action import ActionResult, AgentAction
 from agent.models.task import TaskMode
-from agent.runtime.react_loop.utils.grounding import should_run_grounding
+from agent.runtime.react_loop.components.grounding import should_run_grounding
 
 
 def _base_settings(**kwargs: object) -> AppSettings:

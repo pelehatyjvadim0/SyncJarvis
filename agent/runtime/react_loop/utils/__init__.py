@@ -1,1 +1,1 @@
-"""Внутренние утилиты react_loop (observation, telemetry, persistence, captcha, grounding, fingerprint)."""
+"""Внутренние утилиты react_loop (observation, telemetry, persistence, page_fingerprint и др.)."""
