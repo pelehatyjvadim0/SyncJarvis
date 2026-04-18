@@ -3,13 +3,18 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
 
 from agent.config.settings import ActorPromptLimits
+from agent.llm.contracts.actor import (
+    ActorDecision,
+    GoalCheckDecision,
+    GroundingDecision,
+    VisualRecoveryDecision,
+)
 from agent.llm.services.parser import parse_agent_action_json
 from agent.llm.prompts.actor import (
     build_actor_prompt,
@@ -19,41 +24,6 @@ from agent.llm.prompts.actor import (
 from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
 from agent.models.task import TaskMode
-
-
-@dataclass
-class ActorDecision:
-    action: AgentAction
-    model_used: str
-    prompt_tokens: int
-    completion_tokens: int
-
-
-@dataclass
-class GoalCheckDecision:
-    goal_reached: bool
-    reason: str
-    model_used: str
-    prompt_tokens: int
-    completion_tokens: int
-
-
-@dataclass
-class VisualRecoveryDecision:
-    action: str
-    params: dict
-    reason: str
-    model_used: str
-    prompt_tokens: int
-    completion_tokens: int
-
-
-@dataclass
-class GroundingDecision:
-    action: AgentAction
-    model_used: str
-    prompt_tokens: int
-    completion_tokens: int
 
 
 class ActorLLMClient:

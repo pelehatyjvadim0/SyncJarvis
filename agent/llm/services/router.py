@@ -1,17 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
+from agent.llm.contracts.router import ModelRoute
 from agent.models.action import ActionResult
 from agent.models.task import TaskMode
 from agent.runtime.memory import MemoryGuardView
-
-
-@dataclass
-class ModelRoute:
-    tier: str
-    model: str
-    reason: str
 
 
 class ModelRouter:
@@ -44,7 +36,8 @@ class ModelRouter:
         if last_action_result and (not last_action_result.success or not last_action_result.changed):
             wants_smart = True
             smart_reason = smart_reason or "Нет прогресса на прошлом шаге."
-
+        
+        # если лимит вызова умной модели достигнут, то используем только дешёвую
         if wants_smart:
             last_smart_step = memory_view.last_smart_step
             if current_step - last_smart_step <= self.smart_cooldown_steps:
