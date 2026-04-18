@@ -109,7 +109,7 @@ class ActorLLMClient:
                     temperature=temperature,
                     messages=messages,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  
                 last_exc = exc
                 if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
                     raise
@@ -117,37 +117,48 @@ class ActorLLMClient:
         raise last_exc or RuntimeError(failure_message)
 
     @staticmethod
-    def _parse_goal_check_json(raw_text: str) -> tuple[bool, str]:
+    def _load_json_object_from_raw_text(
+        raw_text: str,
+        *,
+        empty_error: str,
+        not_found_error: str,
+    ) -> dict:
         content = (raw_text or "").strip()
         if not content:
-            raise ValueError("Пустой ответ self-check вместо JSON")
+            raise ValueError(empty_error)
         try:
             data = json.loads(content)
         except Exception:
             start = content.find("{")
             end = content.rfind("}")
             if start == -1 or end == -1 or end <= start:
-                raise ValueError("Не удалось найти JSON в self-check ответе")
+                raise ValueError(not_found_error)
             data = json.loads(content[start : end + 1])
+        if not isinstance(data, dict):
+            raise ValueError(not_found_error)
+        return data
+
+    @staticmethod
+    def _parse_goal_check_json(raw_text: str) -> tuple[bool, str]:
+        data = ActorLLMClient._load_json_object_from_raw_text(
+            raw_text,
+            empty_error="Пустой ответ self-check вместо JSON",
+            not_found_error="Не удалось найти JSON в self-check ответе",
+        )
         goal_reached = bool(data.get("goal_reached", False))
         reason = str(data.get("reason", "") or "")
         return goal_reached, reason
 
     @staticmethod
     def _parse_visual_recovery_json(raw_text: str) -> tuple[str, dict, str]:
-        content = (raw_text or "").strip()
-        if not content:
-            raise ValueError("Пустой ответ visual recovery вместо JSON")
-        try:
-            data = json.loads(content)
-        except Exception:
-            start = content.find("{")
-            end = content.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("Не удалось найти JSON в visual recovery ответе")
-            data = json.loads(content[start : end + 1])
+        data = ActorLLMClient._load_json_object_from_raw_text(
+            raw_text,
+            empty_error="Пустой ответ visual recovery вместо JSON",
+            not_found_error="Не удалось найти JSON в visual recovery ответе",
+        )
         action = str(data.get("action", "wait") or "wait")
-        params = data.get("params") if isinstance(data.get("params"), dict) else {}
+        raw_params = data.get("params")
+        params = raw_params if isinstance(raw_params, dict) else {}
         reason = str(data.get("reason", "") or "")
         return action, params, reason
 
@@ -292,20 +303,15 @@ class ActorLLMClient:
 
     @staticmethod
     def _parse_grounding_action_json(raw_text: str) -> AgentAction:
-        content = (raw_text or "").strip()
-        if not content:
-            raise ValueError("Пустой ответ grounding вместо JSON")
-        try:
-            data = json.loads(content)
-        except Exception:
-            start = content.find("{")
-            end = content.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("Не удалось найти JSON в grounding-ответе")
-            data = json.loads(content[start : end + 1])
+        data = ActorLLMClient._load_json_object_from_raw_text(
+            raw_text,
+            empty_error="Пустой ответ grounding вместо JSON",
+            not_found_error="Не удалось найти JSON в grounding-ответе",
+        )
         thought = str(data.get("thought", "") or data.get("reason", "") or "")
         action = str(data.get("action", "wait") or "wait").strip().lower()
-        params = data.get("params") if isinstance(data.get("params"), dict) else {}
+        raw_params = data.get("params")
+        params = raw_params if isinstance(raw_params, dict) else {}
         allowed = {"click", "type", "scroll", "wait", "click_xy", "navigate"}
         if action not in allowed:
             return AgentAction(
@@ -317,20 +323,15 @@ class ActorLLMClient:
 
     @staticmethod
     def _parse_fusion_step_action_json(raw_text: str) -> AgentAction:
-        content = (raw_text or "").strip()
-        if not content:
-            raise ValueError("Пустой ответ fusion step вместо JSON")
-        try:
-            data = json.loads(content)
-        except Exception:
-            start = content.find("{")
-            end = content.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("Не удалось найти JSON в fusion step ответе")
-            data = json.loads(content[start : end + 1])
+        data = ActorLLMClient._load_json_object_from_raw_text(
+            raw_text,
+            empty_error="Пустой ответ fusion step вместо JSON",
+            not_found_error="Не удалось найти JSON в fusion step ответе",
+        )
         thought = str(data.get("thought", "") or data.get("reason", "") or "")
         action = str(data.get("action", "wait") or "wait").strip().lower()
-        params = data.get("params") if isinstance(data.get("params"), dict) else {}
+        raw_params = data.get("params")
+        params = raw_params if isinstance(raw_params, dict) else {}
         allowed = {"click", "type", "scroll", "wait", "click_xy", "navigate", "finish"}
         if action not in allowed:
             return AgentAction(

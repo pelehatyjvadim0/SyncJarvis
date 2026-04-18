@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from agent.config.settings import AppSettings
-from agent.llm.planner_client import PlannerLLMClient
+from agent.llm.clients.planner import PlannerLLMClient
 from agent.models.plan import ExecutionPlan, Subtask
 
 
