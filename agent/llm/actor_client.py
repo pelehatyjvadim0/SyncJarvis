@@ -5,6 +5,7 @@ import base64
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
 
@@ -88,6 +89,33 @@ class ActorLLMClient:
             isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) >= 500
         )
 
+    async def _chat_with_retry(
+        self,
+        *,
+        model_override: str | None,
+        max_transport_retries: int,
+        max_tokens: int,
+        temperature: float,
+        messages: Any,
+        retry_backoff_base: float,
+        failure_message: str,
+    ):
+        last_exc: BaseException | None = None
+        for attempt in range(max(1, max_transport_retries)):
+            try:
+                return await self.client.chat.completions.create(
+                    model=model_override or self.model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    messages=messages,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
+                    raise
+                await asyncio.sleep(retry_backoff_base * (attempt + 1))
+        raise last_exc or RuntimeError(failure_message)
+
     @staticmethod
     def _parse_goal_check_json(raw_text: str) -> tuple[bool, str]:
         content = (raw_text or "").strip()
@@ -146,23 +174,15 @@ class ActorLLMClient:
             limits=self.prompt_limits,
             self_check_hint=self_check_hint,
         )
-        last_exc: BaseException | None = None
-        for attempt in range(max(1, max_transport_retries)):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=model_override or self.model,
-                    max_tokens=self.request_max_tokens,
-                    temperature=self.temperature,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
-                    raise
-                await asyncio.sleep(0.4 * (attempt + 1))
-        else:
-            raise last_exc or RuntimeError("LLM request failed")
+        response = await self._chat_with_retry(
+            model_override=model_override,
+            max_transport_retries=max_transport_retries,
+            max_tokens=self.request_max_tokens,
+            temperature=self.temperature,
+            messages=[{"role": "user", "content": prompt}],
+            retry_backoff_base=0.4,
+            failure_message="LLM request failed",
+        )
         raw = response.choices[0].message.content or "{}"
         usage = response.usage
         return ActorDecision(
@@ -202,23 +222,15 @@ class ActorLLMClient:
             "Текущие видимые интерактивные элементы:\n"
             f"{json.dumps(compact_observation, ensure_ascii=False)}\n"
         )
-        last_exc: BaseException | None = None
-        for attempt in range(max(1, max_transport_retries)):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=model_override or self.model,
-                    max_tokens=min(120, self.request_max_tokens),
-                    temperature=0.0,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
-                    raise
-                await asyncio.sleep(0.3 * (attempt + 1))
-        else:
-            raise last_exc or RuntimeError("Goal self-check request failed")
+        response = await self._chat_with_retry(
+            model_override=model_override,
+            max_transport_retries=max_transport_retries,
+            max_tokens=min(120, self.request_max_tokens),
+            temperature=0.0,
+            messages=[{"role": "user", "content": prompt}],
+            retry_backoff_base=0.3,
+            failure_message="Goal self-check request failed",
+        )
         raw = response.choices[0].message.content or "{}"
         goal_reached, reason = self._parse_goal_check_json(raw)
         usage = response.usage
@@ -257,23 +269,15 @@ class ActorLLMClient:
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
             ]}
         ]
-        last_exc: BaseException | None = None
-        for attempt in range(max(1, max_transport_retries)):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=model_override or self.model,
-                    max_tokens=min(160, self.request_max_tokens),
-                    temperature=0.1,
-                    messages=messages,
-                )
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
-                    raise
-                await asyncio.sleep(0.3 * (attempt + 1))
-        else:
-            raise last_exc or RuntimeError("Visual recovery request failed")
+        response = await self._chat_with_retry(
+            model_override=model_override,
+            max_transport_retries=max_transport_retries,
+            max_tokens=min(160, self.request_max_tokens),
+            temperature=0.1,
+            messages=messages,
+            retry_backoff_base=0.3,
+            failure_message="Visual recovery request failed",
+        )
         raw = response.choices[0].message.content or "{}"
         action, params, reason = self._parse_visual_recovery_json(raw)
         usage = response.usage
@@ -400,23 +404,15 @@ class ActorLLMClient:
                 ],
             }
         ]
-        last_exc: BaseException | None = None
-        for attempt in range(max(1, max_transport_retries)):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=model_override or self.model,
-                    max_tokens=min(500, self.request_max_tokens),
-                    temperature=0.1,
-                    messages=messages,
-                )
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
-                    raise
-                await asyncio.sleep(0.3 * (attempt + 1))
-        else:
-            raise last_exc or RuntimeError("Fusion step request failed")
+        response = await self._chat_with_retry(
+            model_override=model_override,
+            max_transport_retries=max_transport_retries,
+            max_tokens=min(500, self.request_max_tokens),
+            temperature=0.1,
+            messages=messages,
+            retry_backoff_base=0.3,
+            failure_message="Fusion step request failed",
+        )
         raw = response.choices[0].message.content or "{}"
         action = self._parse_fusion_step_action_json(raw)
         usage = response.usage
@@ -465,23 +461,15 @@ class ActorLLMClient:
                 ],
             }
         ]
-        last_exc: BaseException | None = None
-        for attempt in range(max(1, max_transport_retries)):
-            try:
-                response = await self.client.chat.completions.create(
-                    model=model_override or self.model,
-                    max_tokens=min(400, self.request_max_tokens),
-                    temperature=0.1,
-                    messages=messages,
-                )
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
-                    raise
-                await asyncio.sleep(0.3 * (attempt + 1))
-        else:
-            raise last_exc or RuntimeError("Grounding request failed")
+        response = await self._chat_with_retry(
+            model_override=model_override,
+            max_transport_retries=max_transport_retries,
+            max_tokens=min(400, self.request_max_tokens),
+            temperature=0.1,
+            messages=messages,
+            retry_backoff_base=0.3,
+            failure_message="Grounding request failed",
+        )
         raw = response.choices[0].message.content or "{}"
         action = self._parse_grounding_action_json(raw)
         usage = response.usage
