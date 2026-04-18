@@ -23,7 +23,6 @@ from agent.runtime.react_loop.grounding import (
     should_apply_grounding_search_wait,
     should_run_grounding,
 )
-from agent.perception.accessibility import collect_interactive_elements
 from agent.policies.base import BaseTaskPolicy
 from agent.runtime.anti_loop import apply_global_anti_loop
 from agent.runtime.memory import RuntimeMemory
@@ -39,6 +38,9 @@ from agent.tools.browser_executor import BrowserToolExecutor
 from agent.runtime.react_loop.engine.types import (
     _CaptchaIterationOutcome,
     _LlmDecision,
+)
+from agent.runtime.react_loop.utils.observation_builder import (
+    run_subtask_observation_collection_phase,
 )
 
 
@@ -592,26 +594,6 @@ class SubtaskReActLoop:
             self.last_subtask_executed_step_total = executed_steps
             return state, _steps_delta(), cost_stats
 
-        # Вспомогательная функция: пытается собрать интерактивные элементы со страницы.
-        # При ошибке перепривязывает страницу и выполняет повторный сбор (например, если страница устарела).
-        async def _collect_observation_with_recovery(page) -> tuple[object, list[InteractiveElement]]:
-            try:
-                return page, await collect_interactive_elements(page)
-            except Exception as exc: 
-                # Сообщаем о падении сбора дерева доступности.
-                await stream_callback(f"[OBSERVATION] Ошибка сбора accessibility дерева: {exc}")
-                self.executor.page = None
-                recovered_page = self._require_page()
-                # Если страница была перепривязана, сигнализируем об этом в логе.
-                if recovered_page is not page:
-                    await stream_callback("[OBSERVATION] Перепривязка к активной вкладке и повторный сбор.")
-                try:
-                    return recovered_page, await collect_interactive_elements(recovered_page)
-                except Exception as exc2:  
-                    # Если и повторная попытка не удалась, возвращаем пустой список observation.
-                    await stream_callback(f"[OBSERVATION] Повторный сбор после перепривязки не удался: {exc2}")
-                    return recovered_page, []
-
         # Основной цикл — пока не достигнут лимит шагов max_steps.
         # На каждом шаге выполняется наблюдение, принятие решения, выполнение действия и реакция на результат.
         while executed_steps < max_steps:
@@ -623,48 +605,22 @@ class SubtaskReActLoop:
             page = self._require_page()
             url_changed_since_last = self._loop_end_url is not None and page.url != self._loop_end_url
 
-            # Пытаемся получить интерактивные элементы. При необходимости перепривязываем страницу.
-            page, observation = await _collect_observation_with_recovery(page)
-            if observation:
-                # Если удалось собрать элементы, сбрасываем счетчик неудач сбора.
-                observation_collect_fail_streak = 0
-            else:
-                # Если не удалось собрать, увеличиваем счетчик ошибочного сбора.
-                observation_collect_fail_streak += 1
-            # Если подряд несколько неудач — выполняем fallback: ждем, перепривязываем, снова пробуем собрать элементы.
-            if observation_collect_fail_streak >= 2:
-                await stream_callback("[OBSERVATION] Controlled fallback: wait + page rebind.")
-                await self.executor.execute_action("wait", {"seconds": 0.6}, observation)
-                self.executor.page = None
-                page = self._require_page()
-                page, observation = await _collect_observation_with_recovery(page)
-                observation_collect_fail_streak = 0 if observation else observation_collect_fail_streak
-            # Сохраняем текущее observation для возможного последующего анализа.
-            self.last_observation = list(observation)
-            # Если интерактивных элементов совсем нет, считаем такие случаи.
-            if len(observation) == 0:
-                empty_observation_streak += 1
-                # Если подряд несколько пустых observation — завершить с ошибкой.
-                if empty_observation_streak >= 3:
-                    memory.done_reason = "Observation пустой после нескольких попыток recovery."
-                    return _ret(AgentState.ERROR)
-                # Если это не критическая ситуация — пробуем прокрутить страницу вниз, вдруг элементы вне viewport.
-                await stream_callback(
-                    "[OBSERVATION] Нет видимых интерактивных элементов в viewport — выполняю scroll вниз."
-                )
-                await page.mouse.wheel(0, 720)  # Скроллим вниз
-                await asyncio.sleep(0.12)  # Ждем, чтобы страница успела отрисоваться
-                page, observation = await _collect_observation_with_recovery(page)
-                self.last_observation = list(observation)
-            # Если элементов мало — возможно, есть смысл подсказать пользователю или LLM-агенту про скролл.
-            elif len(observation) < 3:
-                empty_observation_streak = 0
-                await stream_callback(
-                    "[HINT] Видимых элементов мало — цель может быть ниже или выше; при необходимости сделай scroll."
-                )
-            else:
-                # Сбрасываем счетчик пустых observation, если элементы найдены.
-                empty_observation_streak = 0
+            _obs_phase = await run_subtask_observation_collection_phase(
+                page,
+                memory=memory,
+                stream_callback=stream_callback,
+                executor=self.executor,
+                require_page=self._require_page,
+                set_last_observation=lambda obs: setattr(self, "last_observation", list(obs)),
+                observation_collect_fail_streak=observation_collect_fail_streak,
+                empty_observation_streak=empty_observation_streak,
+            )
+            page = _obs_phase.page
+            observation = _obs_phase.observation
+            observation_collect_fail_streak = _obs_phase.observation_collect_fail_streak
+            empty_observation_streak = _obs_phase.empty_observation_streak
+            if _obs_phase.agent_state_if_terminal is not None:
+                return _ret(_obs_phase.agent_state_if_terminal)
 
             obs_window = ordered_observation_for_actor_prompt(observation, self.actor.prompt_limits)
 
