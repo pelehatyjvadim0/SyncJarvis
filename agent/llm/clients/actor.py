@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 from pathlib import Path
-from typing import Any
 
-from openai import APIConnectionError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI
 
 from agent.config.settings import ActorPromptLimits
+from agent.llm.base import chat_with_retry
 from agent.llm.contracts.actor import (
     ActorDecision,
     GoalCheckDecision,
@@ -51,40 +50,6 @@ class ActorLLMClient:
             default_headers=headers or None,
         )
         self.request_max_tokens = request_max_tokens
-
-    @staticmethod
-    def _is_retryable_transport_error(exc: BaseException) -> bool:
-        # Решает, стоит ли повторить запрос к API (сеть, таймаут, 5xx, rate limit).
-        return isinstance(exc, (APIConnectionError, APITimeoutError, RateLimitError)) or (
-            isinstance(exc, APIStatusError) and getattr(exc, "status_code", 0) >= 500
-        )
-
-    async def _chat_with_retry(
-        self,
-        *,
-        model_override: str | None,
-        max_transport_retries: int,
-        max_tokens: int,
-        temperature: float,
-        messages: Any,
-        retry_backoff_base: float,
-        failure_message: str,
-    ):
-        last_exc: BaseException | None = None
-        for attempt in range(max(1, max_transport_retries)):
-            try:
-                return await self.client.chat.completions.create(
-                    model=model_override or self.model,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    messages=messages,
-                )
-            except Exception as exc:  
-                last_exc = exc
-                if not self._is_retryable_transport_error(exc) or attempt >= max_transport_retries - 1:
-                    raise
-                await asyncio.sleep(retry_backoff_base * (attempt + 1))
-        raise last_exc or RuntimeError(failure_message)
 
     @staticmethod
     def _load_json_object_from_raw_text(
@@ -155,7 +120,9 @@ class ActorLLMClient:
             limits=self.prompt_limits,
             self_check_hint=self_check_hint,
         )
-        response = await self._chat_with_retry(
+        response = await chat_with_retry(
+            self.client,
+            default_model=self.model,
             model_override=model_override,
             max_transport_retries=max_transport_retries,
             max_tokens=self.request_max_tokens,
@@ -203,7 +170,9 @@ class ActorLLMClient:
             "Текущие видимые интерактивные элементы:\n"
             f"{json.dumps(compact_observation, ensure_ascii=False)}\n"
         )
-        response = await self._chat_with_retry(
+        response = await chat_with_retry(
+            self.client,
+            default_model=self.model,
             model_override=model_override,
             max_transport_retries=max_transport_retries,
             max_tokens=min(120, self.request_max_tokens),
@@ -250,7 +219,9 @@ class ActorLLMClient:
                 {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
             ]}
         ]
-        response = await self._chat_with_retry(
+        response = await chat_with_retry(
+            self.client,
+            default_model=self.model,
             model_override=model_override,
             max_transport_retries=max_transport_retries,
             max_tokens=min(160, self.request_max_tokens),
@@ -375,7 +346,9 @@ class ActorLLMClient:
                 ],
             }
         ]
-        response = await self._chat_with_retry(
+        response = await chat_with_retry(
+            self.client,
+            default_model=self.model,
             model_override=model_override,
             max_transport_retries=max_transport_retries,
             max_tokens=min(500, self.request_max_tokens),
@@ -432,7 +405,9 @@ class ActorLLMClient:
                 ],
             }
         ]
-        response = await self._chat_with_retry(
+        response = await chat_with_retry(
+            self.client,
+            default_model=self.model,
             model_override=model_override,
             max_transport_retries=max_transport_retries,
             max_tokens=min(400, self.request_max_tokens),
