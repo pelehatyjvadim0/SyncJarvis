@@ -291,13 +291,27 @@ class TaskOrchestrator:
         if self.settings.goal_verify_llm:
             satisfied = await verify_user_goal_satisfied_llm(
                 self.settings,
+                executor=self.executor,
                 user_goal=user_goal,
                 done_reason_summary=summary,
                 stream_callback=stream_callback,
             )
             if not satisfied:
-                await stream_callback("[VERIFY] LLM считает цель не достигнутой.")
-                return AgentState.ERROR
+                await stream_callback(
+                    "[VERIFY] Итог: цель не подтверждена (см. выше [VERIFY-RESULT] / [VERIFY-FAIL] / [VERIFY-DEBUG]). "
+                    + (
+                        "Сессия: PARTIAL (AGENT_GOAL_VERIFY_FAIL_SOFT=1)."
+                        if self.settings.goal_verify_fail_soft
+                        else "Сессия завершается с ERROR."
+                    )
+                )
+                if self.settings.goal_verify_fail_soft:
+                    self._had_partial = True
+                    self._completion_notes.append(
+                        "Финальная LLM-проверка цели: satisfied=false (мягкий режим, см. лог verify)."
+                    )
+                else:
+                    return AgentState.ERROR
         terminal_state = AgentState.PARTIAL if self._had_partial else AgentState.FINISHED
         if terminal_state == AgentState.FINISHED:
             try:
@@ -330,15 +344,16 @@ class TaskOrchestrator:
         # Генерирует итоговый markdown-отчёт по завершению run (отдельный system prompt + контекст истории и финального экрана).
         await stream_callback("[FINAL-REPORT] Генерирую финальный отчёт.")
         system_prompt = (
-            "Ты — элитный аналитик-ассистент. Твоя цель: кратко и красиво подвести итог работы.\n"
-            "Используй Markdown, жирный шрифт для ключевых данных и эмодзи.\n\n"
-            "Формат ответа:\n"
-            "🤖 **Assistant**: [Короткая фраза о завершении]\n\n"
-            "**Результат выполнения:**\n"
-            "✅ [Шаг 1: что сделано, какие данные найдены]\n"
-            "✅ [Шаг 2: какое действие совершено и к чему привело]\n"
-            "✅ [Итоговый результат: ссылка, цена, статус или подтверждение открытия страницы]\n\n"
-            "Финальное состояние: [Кратко опиши, что сейчас видит пользователь на экране]"
+            "Ты — элитный аналитик-ассистент. Твоя задача: составить краткий, но информативный отчет о работе агента.\n"
+            "Стиль: профессиональный, лаконичный, дружелюбный. Используй Markdown и эмодзи.\n\n"
+            "Структура ответа:\n"
+            "🤖 **SyncJarvis**: [Краткий итог: задача выполнена/не выполнена, общий статус]\n\n"
+            "**Хронология действий:**\n"
+            "• [Действие 1] → [Результат]\n"
+            "• [Действие 2] → [Результат]\n"
+            "• [И так далее: только важные этапы и найденные данные]\n\n"
+            "🏁 **Итог**: [Конкретный финальный результат: цена, ссылка, подтверждение или статус]\n\n"
+            "🖼 **На экране сейчас**: [Короткое описание финального состояния страницы и ключевых видимых элементов]"
         )
         user_prompt = self._build_final_report_user_prompt()
         headers: dict[str, str] = {}
@@ -366,10 +381,10 @@ class TaskOrchestrator:
             return report
         await stream_callback("[FINAL-REPORT] Пустой ответ модели, использую fallback.")
         return (
-            "🤖 **Assistant**: Задача завершена.\n\n"
+            "🤖 **SyncJarvis**: Задача завершена.\n\n"
             "**Результат выполнения:**\n"
-            + "\n".join(f"✅ {x}" for x in (self._completion_notes or ["Подзадачи выполнены."]))
-            + "\n\nФинальное состояние: Открыта финальная страница по целевой задаче."
+            + "\n".join(f"✅ {sentence.strip()}" for x in (self._completion_notes or ["Подзадачи выполнены."]) for sentence in x.replace('\n', '. ').split('. ') if sentence.strip())
+            + "\n\nФинальное состояние:\nОткрыта финальная страница по целевой задаче."
         )
 
     async def run(self, user_goal: str, stream_callback: Callable[[str], Awaitable[None]]) -> AgentState:

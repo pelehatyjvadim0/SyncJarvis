@@ -23,4 +23,6 @@ class InteractiveElement(BaseModel):
     bbox_doc_y: float | None = None
     bbox_doc_w: float | None = None
     bbox_doc_h: float | None = None
+    # Ближайший «контейнер» вверх по AX (section/article/listitem/heading с текстом) — для промпта и дизambigвации карточек.
+    parent_anchor: str | None = None
 

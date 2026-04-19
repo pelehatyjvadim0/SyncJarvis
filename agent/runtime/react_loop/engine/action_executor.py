@@ -18,7 +18,7 @@ from agent.runtime.react_loop.components.fingerprinting import (
 )
 from agent.runtime.react_loop.config import LoopConfig, RunCostStats
 from agent.runtime.react_loop.engine.types import _LlmDecision
-from agent.runtime.react_loop.step_utils import action_signature
+from agent.runtime.react_loop.step_utils import action_signature, describe_guard_override_for_fusion
 from agent.runtime.react_loop.utils.persistence import persist_step
 from agent.runtime.react_loop.utils.telemetry import build_step_telemetry
 from agent.runtime.security import is_confirmation_required
@@ -69,6 +69,8 @@ async def update_performance_metrics(
     memory: RuntimeMemory,
     cost_stats: RunCostStats,
     observation: list[InteractiveElement],
+    # То же окно, что в промпте fusion/grounding; пишем в history JSON — по нему трактовать element_index, а не по сырому observation.
+    observation_window: list[InteractiveElement] | None,
     guarded: AgentAction,
     result: ActionResult,
     llm: _LlmDecision,
@@ -125,6 +127,7 @@ async def update_performance_metrics(
         history_logger=history_logger,
         global_step=global_step,
         observation=observation,
+        observation_window=observation_window,
         llm_response=guarded,
         result=result,
         telemetry=telemetry,
@@ -172,6 +175,7 @@ async def run_guarded_action_with_fingerprint_and_metrics(
     policy: BaseTaskPolicy,
     subtask: Subtask,
     observation: list[InteractiveElement],
+    observation_window: list[InteractiveElement] | None,  # см. update_performance_metrics: лог шага = промпт-окно для индекса
     memory: RuntimeMemory,
     page,
     stream_callback: Callable[[str], Awaitable[None]],
@@ -184,22 +188,25 @@ async def run_guarded_action_with_fingerprint_and_metrics(
 ) -> tuple[AgentAction, ActionResult, _LlmDecision, AgentState | None]:
     # Применяем защитные политики и фильтры к предложенному LLM действию.
     guarded = apply_guards(policy, subtask.goal, observation, llm.proposed, memory)
-    after_policy = guarded
+    after_apply_guards = guarded
     # Дополнительное уточнение: если был повторный клик (self_check), корректируем действие.
     guarded = refine_self_check_repeat_click(guarded, last_action, memory)
     # Логируем, если произошло изменение в действиях вследствие этой корректировки.
-    if guarded.action != after_policy.action or guarded.params != after_policy.params:
-        ax_dbg = after_policy.params.get("ax_id", "")
+    if guarded.action != after_apply_guards.action or guarded.params != after_apply_guards.params:
+        ax_dbg = after_apply_guards.params.get("ax_id", "")
         await stream_callback(
             f"[GUARD] reason=self_check_repeat_click | ax_id={ax_dbg}"
         )
-    # Если политика/глобальные guard-и изменили действие по сравнению с оригинальным LLM-ответом, логируем это.
-    if after_policy.action != llm.proposed.action or after_policy.params != llm.proposed.params:
+    # Если итоговое действие отличается от ответа LLM — лог + подсказка в память для следующего fusion (иначе модель зацикливается на scroll и т.п.).
+    if guarded.action != llm.proposed.action or guarded.params != llm.proposed.params:
         await stream_callback(
             "[GUARD] reason=policy_or_global_guard_changed_action | "
             f"type_not_editable_streak={memory.type_not_editable_streak} | "
             f"search_target_miss_streak={memory.search_target_miss_streak}"
         )
+        memory.last_guard_override_hint = describe_guard_override_for_fusion(llm.proposed, guarded)
+    else:
+        memory.last_guard_override_hint = ""
     # Формируем компактную уникальную подпись действия для отслеживания повторов.
     sig = action_signature(guarded)
     # Обновляем хранилище подписей, чтобы видеть, какие действия уже были осуществлены.
@@ -246,6 +253,7 @@ async def run_guarded_action_with_fingerprint_and_metrics(
         memory=memory,
         cost_stats=cost_stats,
         observation=observation,
+        observation_window=observation_window,
         guarded=guarded,
         result=result,
         llm=llm,

@@ -6,6 +6,29 @@ from playwright.async_api import CDPSession, Page
 
 from agent.models.observation import InteractiveElement
 
+
+def _trim_anchor_label(name: Any, max_len: int = 72) -> str:
+    s = (str(name) if name is not None else "").strip()
+    if len(s) > max_len:
+        return s[: max_len - 1] + "…"
+    return s
+
+
+def _container_anchor_from_ancestors(ancestor_stack: list[tuple[str, Any]]) -> str | None:
+    # Ближайший к цели предок-контейнер: section/article/listitem или явный текстовый заголовок (heading / именованный region).
+    for role, name in reversed(ancestor_stack):
+        r = str(role or "").lower()
+        nm = _trim_anchor_label(name)
+        if r in ("section", "article", "listitem"):
+            label = "List item" if r == "listitem" else r.title()
+            return f'{label} "{nm}"' if nm else label
+        if r == "heading" and nm:
+            return f'Heading "{nm}"'
+        if r in ("banner", "header", "main", "navigation", "region", "complementary", "form") and nm:
+            return f'{r.title()} "{nm}"'
+    return None
+
+
 INTERACTIVE_ROLES = {
     "button",
     "link",
@@ -125,7 +148,8 @@ async def collect_interactive_elements(
                 return value
         return None
 
-    def walk(node_id: str, path: str = "0") -> None:
+    def walk(node_id: str, path: str = "0", ancestor_stack: list[tuple[str, Any]] | None = None) -> None:
+        ancestor_stack = ancestor_stack or []
         node = nodes_by_id.get(node_id)
         if not node:
             return
@@ -134,11 +158,13 @@ async def collect_interactive_elements(
         name = read_ax_value(node, "name")
         value = read_ax_value(node, "value")
         if role in INTERACTIVE_ROLES:
+            anchor = _container_anchor_from_ancestors(ancestor_stack)
             raw_nodes.append(
                 {
                     "ax_id": path,
                     "role": role,
                     "name": name,
+                    "parent_anchor": anchor,
                     "dom_id": str(node.get("backendDOMNodeId")) if node.get("backendDOMNodeId") else None,
                     "disabled": read_property(node, "disabled"),
                     "focused": read_property(node, "focused"),
@@ -150,11 +176,12 @@ async def collect_interactive_elements(
                 }
             )
 
+        next_stack = ancestor_stack + [(role, name)]
         for idx, child_id in enumerate(node.get("childIds", [])):
-            walk(str(child_id), f"{path}.{idx}")
+            walk(str(child_id), f"{path}.{idx}", next_stack)
 
     for root_idx, root_id in enumerate(root_ids):
-        walk(root_id, str(root_idx))
+        walk(root_id, str(root_idx), [])
 
     backend_ids: list[int] = []
     for node in raw_nodes:

@@ -9,8 +9,12 @@ from agent.llm.prompts.templates import (
     actor_decision_json_role_header,
     actor_general_rules_section,
     actor_visibility_section,
+    fusion_step_thought_contract_block,
+    goal_self_check_vision_instructions_block,
+    llm_json_output_prohibitions_block,
     planner_plan_rules_block,
     planner_role_and_schema_block,
+    user_goal_verify_vision_instructions_block,
 )
 
 __all__ = [
@@ -24,4 +28,8 @@ __all__ = [
     "actor_general_rules_section",
     "planner_role_and_schema_block",
     "planner_plan_rules_block",
+    "llm_json_output_prohibitions_block",
+    "fusion_step_thought_contract_block",
+    "goal_self_check_vision_instructions_block",
+    "user_goal_verify_vision_instructions_block",
 ]

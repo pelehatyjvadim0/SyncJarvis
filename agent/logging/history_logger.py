@@ -16,7 +16,8 @@ class HistoryLogger:
 
     async def save_screenshot(self, page: Page, step: int) -> str:
         path = self.history_dir / f"step_{step:03d}.png"
-        await page.screenshot(path=str(path), full_page=True)
+        # viewport: full_page=True на крупных сайтах (hh.ru и т.д.) часто занимает минуты и блокирует цикл после navigate/persist.
+        await page.screenshot(path=str(path), full_page=False, timeout=6_000)
         return str(path)
 
     def save_step_json(self, step_log: StepLog) -> str:

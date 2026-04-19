@@ -28,6 +28,8 @@ def resolve_actor_element_index(
             params={"seconds": 0.45},
         )
         return wait, f"[GUARD] reason=element_index_out_of_range | index={idx} | window_size={n}"
+    # Убираем ax_id из ответа модели до подстановки канонического из окна — иначе в логах и отладке смешиваются «чужой» путь и индекс.
+    params.pop("ax_id", None)
     el = observation_window[idx]
     params["ax_id"] = el.ax_id
     return proposed.model_copy(update={"params": params}), None

@@ -18,6 +18,7 @@ async def persist_step(
     llm_response: AgentAction,
     result: ActionResult,
     telemetry: StepTelemetry,
+    observation_window: list[InteractiveElement] | None = None,  # если задано — дебаг element_index по тем же строкам, что видела модель
 ) -> None:
     screenshot_path = await history_logger.save_screenshot(page, global_step)
     result.screenshot_path = screenshot_path
@@ -25,6 +26,7 @@ async def persist_step(
         StepLog(
             step=global_step,
             observation=observation,
+            observation_window=observation_window,
             llm_response=llm_response,
             result=result,
             telemetry=telemetry,

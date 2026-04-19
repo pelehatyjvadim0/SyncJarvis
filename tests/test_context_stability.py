@@ -3,14 +3,15 @@ from __future__ import annotations
 import unittest
 
 from agent.config.settings import ActorPromptLimits, AgentPricing, AppSettings
-from agent.models.action import AgentAction
+from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
 from agent.models.task import TaskMode
 from agent.policies.search import SearchPolicy
 from agent.runtime.memory import MemoryGuardView
 from agent.runtime.react_loop.config import LoopConfig
 from agent.runtime.react_loop.loop import SubtaskReActLoop
-from agent.runtime.react_loop.step_utils import format_runtime_context
+from agent.runtime.memory import RuntimeMemory
+from agent.runtime.react_loop.step_utils import format_runtime_context, fusion_click_xy_recovery_hint
 from agent.tools.browser_executor import BrowserToolExecutor
 
 
@@ -36,8 +37,11 @@ def _settings() -> AppSettings:
         captcha_max_consecutive_waits=20,
         llm_transport_max_retries=1,
         goal_verify_llm=False,
+        goal_verify_fail_soft=False,
         continue_after_subtask_step_limit=False,
         browser_headless=True,
+        browser_viewport_width=1440,
+        browser_viewport_height=900,
         browser_cdp_url=None,
         subtask_goal_self_check_llm=False,
         subtask_goal_self_check_after_failed_click=True,
@@ -49,13 +53,15 @@ def _settings() -> AppSettings:
         grounding_after_url_change=True,
         grounding_modes=frozenset({"SEARCH", "SELECTION"}),
         grounding_min_wait_seconds=0.4,
+        browser_navigate_wait_until="domcontentloaded",
+        browser_navigate_timeout_ms=30_000,
+        browser_navigate_networkidle_timeout_ms=10_000,
+        browser_navigate_post_settle_seconds=0.05,
     )
 
 
 class ContextStabilityTests(unittest.TestCase):
     def test_runtime_context_contains_extended_streaks(self) -> None:
-        from agent.runtime.memory import RuntimeMemory
-
         mem = RuntimeMemory(
             type_not_editable_streak=2,
             search_target_miss_streak=3,
@@ -122,6 +128,23 @@ class ContextStabilityTests(unittest.TestCase):
         self.assertEqual(guarded.action, "type")
         self.assertEqual(guarded.params.get("ax_id"), "i1")
         self.assertEqual(guarded.params.get("press_enter"), True)
+
+
+class FusionClickXyHintTests(unittest.TestCase):
+    def test_hint_on_tool_failure(self) -> None:
+        act = AgentAction(thought="t", action="click_xy", params={"x": 1.0, "y": 2.0})
+        res = ActionResult(success=False, message="err", changed=False, error="e")
+        h = fusion_click_xy_recovery_hint(act, res, RuntimeMemory())
+        self.assertIn("success=false", h)
+        self.assertIn("x,y", h)
+
+    def test_hint_on_repeat_signature(self) -> None:
+        act = AgentAction(thought="t", action="click_xy", params={"x": 10.0, "y": 20.0})
+        res = ActionResult(success=True, message="ok", changed=True)
+        mem = RuntimeMemory(repeat_count=1)
+        h = fusion_click_xy_recovery_hint(act, res, mem)
+        self.assertIn("ПРИОРИТЕТ", h)
+        self.assertIn("Прошлый thought", h)
 
 
 if __name__ == "__main__":

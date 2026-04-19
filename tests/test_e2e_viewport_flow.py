@@ -57,8 +57,11 @@ def _make_settings(history_dir: str) -> AppSettings:
         captcha_max_consecutive_waits=20,
         llm_transport_max_retries=1,
         goal_verify_llm=False,
+        goal_verify_fail_soft=False,
         continue_after_subtask_step_limit=False,
         browser_headless=False,
+        browser_viewport_width=1440,
+        browser_viewport_height=900,
         browser_cdp_url=None,
         subtask_goal_self_check_llm=False,
         subtask_goal_self_check_after_failed_click=True,
@@ -70,6 +73,10 @@ def _make_settings(history_dir: str) -> AppSettings:
         grounding_after_url_change=True,
         grounding_modes=frozenset({"SEARCH", "SELECTION"}),
         grounding_min_wait_seconds=0.4,
+        browser_navigate_wait_until="domcontentloaded",
+        browser_navigate_timeout_ms=30_000,
+        browser_navigate_networkidle_timeout_ms=10_000,
+        browser_navigate_post_settle_seconds=0.05,
     )
 
 
@@ -112,7 +119,7 @@ class E2EViewportFlowTests(IsolatedAsyncioTestCase):
                 await browser.close()
 
     async def test_react_loop_mock_llm_scroll_then_finish(self) -> None:
-        """E2E: мок _make_decision (без сети) — scroll вниз, затем finish."""
+        """E2E: мок llm_decision_phase.make_decision (без сети) — scroll вниз, затем finish."""
         profile = tempfile.mkdtemp(prefix="sj-prof-")
         hist = tempfile.mkdtemp(prefix="sj-hist-")
         settings = _make_settings(hist)
@@ -169,7 +176,10 @@ class E2EViewportFlowTests(IsolatedAsyncioTestCase):
             async def _stream(_m: str) -> None:
                 return None
 
-            with patch.object(SubtaskReActLoop, "_make_decision", new_callable=AsyncMock) as md:
+            with patch(
+                "agent.runtime.react_loop.engine.phases.llm_decision_phase.make_decision",
+                new_callable=AsyncMock,
+            ) as md:
                 md.side_effect = [dec1, dec2]
                 state, _delta, _cost = await loop.run_subtask(
                     subtask=subtask,

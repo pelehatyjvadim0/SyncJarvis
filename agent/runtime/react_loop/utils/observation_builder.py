@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+
+# Сбор observation на странице; parent_anchor и пр. — в agent.perception.accessibility при обходе AX.
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Any

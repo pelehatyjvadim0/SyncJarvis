@@ -31,8 +31,11 @@ def _base_settings(**kwargs: object) -> AppSettings:
         captcha_max_consecutive_waits=5,
         llm_transport_max_retries=1,
         goal_verify_llm=False,
+        goal_verify_fail_soft=False,
         continue_after_subtask_step_limit=False,
         browser_headless=True,
+        browser_viewport_width=1440,
+        browser_viewport_height=900,
         browser_cdp_url=None,
         subtask_goal_self_check_llm=False,
         subtask_goal_self_check_after_failed_click=True,
@@ -44,6 +47,10 @@ def _base_settings(**kwargs: object) -> AppSettings:
         grounding_after_url_change=True,
         grounding_modes=frozenset({"SEARCH", "SELECTION"}),
         grounding_min_wait_seconds=0.4,
+        browser_navigate_wait_until="domcontentloaded",
+        browser_navigate_timeout_ms=30_000,
+        browser_navigate_networkidle_timeout_ms=10_000,
+        browser_navigate_post_settle_seconds=0.05,
     )
     return replace(base, **kwargs) if kwargs else base
 

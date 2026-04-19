@@ -48,6 +48,17 @@ def _parse_grounding_modes(raw: str) -> frozenset[str]:
     return frozenset(items) if items else frozenset({"SEARCH", "SELECTION"})
 
 
+def _env_navigate_wait_until(key: str, default: str) -> str:
+    raw = (os.getenv(key) or default).strip().lower()
+    allowed = frozenset({"domcontentloaded", "load", "commit", "networkidle"})
+    return raw if raw in allowed else default
+
+
+def _env_viewport_dim(key: str, default: int, *, min_v: int, max_v: int) -> int:
+    v = _env_int(key, default)
+    return max(min_v, min(max_v, v))
+
+
 @dataclass(frozen=True)
 class AgentPricing:
     default_input_per_1m: float
@@ -110,17 +121,22 @@ class AppSettings:
     llm_transport_max_retries: int
     # После FINISHED - короткий LLM-опрос «достигнута ли цель пользователя» (доп. запрос).
     goal_verify_llm: bool
+    # Если verify вернул satisfied=false — не завершать ERROR, а PARTIAL (осторожно: отчёт может быть неточным).
+    goal_verify_fail_soft: bool
     # При SUBTASK_STEP_LIMIT помечать подзадачу выполненной и идти дальше (осторожно: цель могла быть не достигнута).
     continue_after_subtask_step_limit: bool
     # True — Chromium без окна (CI/сервер); False — видимое окно (локальная отладка и капча руками).
     browser_headless: bool
+    # Размер layout viewport для нового контекста Playwright (адаптивная вёрстка сайта зависит от этих пикселей).
+    browser_viewport_width: int
+    browser_viewport_height: int
     # Если задан (например http://127.0.0.1:9222) — Playwright подключается к уже запущенному Chromium по CDP, новый браузер не поднимается.
     browser_cdp_url: str | None
     # Включает микро LLM self-check после успешного шага: достигнута ли цель подзадачи на текущей странице.
     subtask_goal_self_check_llm: bool
     # При включённом self-check: для SELECTION/TRANSACTION вызывать проверку и после неуспешного click (товар уже в корзине, а инструмент вернул timeout).
     subtask_goal_self_check_after_failed_click: bool
-    # На каждом шаге: скрин viewport + a11y-список в одну multimodal-сессию со сверкой видимого и дерева (основной путь актёра).
+    # Устарело: раньше переключатель «текст vs fusion»; сейчас актёр всегда viewport-first (поле читается из .env для совместимости дампов настроек).
     observation_fusion_multimodal: bool
     # Multimodal grounding: скрин + список element_index после ключевых событий (без хардкода под домены).
     grounding_enabled: bool
@@ -130,6 +146,12 @@ class AppSettings:
     grounding_after_url_change: bool
     grounding_modes: frozenset[str]
     grounding_min_wait_seconds: float
+    # navigate: goto(wait_until=...) + опционально networkidle + settle. ``load`` на крупных сайтах (hh.ru и т.д.) часто
+    # зависает на минуты — по умолчанию ``domcontentloaded``. См. AGENT_BROWSER_NAVIGATE_WAIT_UNTIL.
+    browser_navigate_wait_until: str
+    browser_navigate_timeout_ms: int
+    browser_navigate_networkidle_timeout_ms: int
+    browser_navigate_post_settle_seconds: float
 
 
 def load_app_settings() -> AppSettings:
@@ -171,8 +193,15 @@ def load_app_settings() -> AppSettings:
         captcha_max_consecutive_waits=_env_int("AGENT_CAPTCHA_MAX_CONSECUTIVE_WAIT", 20),
         llm_transport_max_retries=_env_int("AGENT_LLM_TRANSPORT_MAX_RETRIES", 3),
         goal_verify_llm=_env_bool("AGENT_GOAL_VERIFY_LLM", False),
+        goal_verify_fail_soft=_env_bool("AGENT_GOAL_VERIFY_FAIL_SOFT", False),
         continue_after_subtask_step_limit=_env_bool("AGENT_CONTINUE_AFTER_SUBTASK_LIMIT", False),
         browser_headless=_env_bool("AGENT_BROWSER_HEADLESS", False),
+        browser_viewport_width=_env_viewport_dim(
+            "AGENT_BROWSER_VIEWPORT_WIDTH", 1440, min_v=320, max_v=3840
+        ),
+        browser_viewport_height=_env_viewport_dim(
+            "AGENT_BROWSER_VIEWPORT_HEIGHT", 900, min_v=240, max_v=2160
+        ),
         browser_cdp_url=_env_opt_str("AGENT_BROWSER_CDP_URL"),
         subtask_goal_self_check_llm=_env_bool("AGENT_SUBTASK_GOAL_SELF_CHECK_LLM", False),
         subtask_goal_self_check_after_failed_click=_env_bool(
@@ -186,4 +215,14 @@ def load_app_settings() -> AppSettings:
         grounding_after_url_change=_env_bool("AGENT_GROUNDING_AFTER_URL_CHANGE", True),
         grounding_modes=_parse_grounding_modes(_env_str("AGENT_GROUNDING_MODES", "SEARCH,SELECTION")),
         grounding_min_wait_seconds=_env_int("AGENT_GROUNDING_MIN_WAIT_MS", 400) / 1000.0,
+        browser_navigate_wait_until=_env_navigate_wait_until(
+            "AGENT_BROWSER_NAVIGATE_WAIT_UNTIL", "domcontentloaded"
+        ),
+        browser_navigate_timeout_ms=max(5_000, _env_int("AGENT_BROWSER_NAVIGATE_TIMEOUT_MS", 180_000)),
+        browser_navigate_networkidle_timeout_ms=max(
+            0, _env_int("AGENT_BROWSER_NAVIGATE_NETWORKIDLE_TIMEOUT_MS", 12_000)
+        ),
+        browser_navigate_post_settle_seconds=max(
+            0.0, _env_int("AGENT_BROWSER_NAVIGATE_POST_SETTLE_MS", 500) / 1000.0
+        ),
     )

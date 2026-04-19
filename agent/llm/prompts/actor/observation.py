@@ -48,6 +48,8 @@ def serialize_observation_window_for_actor_prompt(
                 "w": round(item.bbox_doc_w or 0.0, 1),
                 "h": round(item.bbox_doc_h or 0.0, 1),
             }
+        if item.parent_anchor:
+            row["parent"] = item.parent_anchor
         compact.append(row)
     return compact
 

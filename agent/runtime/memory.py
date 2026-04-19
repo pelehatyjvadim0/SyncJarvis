@@ -39,8 +39,12 @@ class RuntimeMemory:
     vision_recovery_count: int = 0
     # Подсказка от assess_goal_reached при goal_reached=False — пробрасывается в Actor до сброса.
     self_check_hint: str = ""
+    # Если исполненное действие отличается от ответа LLM (антицикл/политика) — краткое объяснение для следующего fusion-промпта.
+    last_guard_override_hint: str = ""
     # Последний успешно запланированный click по ax_id (для гардов и отладки).
     last_click_ax_id: str = ""
+    # Подряд отказов smart crop-verify без исполнения click/type — чтобы не зациклиться на одном element_index.
+    crop_verify_no_streak: int = 0
 
     def update_signature(self, signature: str) -> None:
         if self.recent_action_signatures and self.recent_action_signatures[-1] == signature:
