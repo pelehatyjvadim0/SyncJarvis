@@ -1,20 +1,36 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-  <img src="https://img.shields.io/badge/Playwright-Automated-2EAD33?style=for-the-badge&logo=playwright&logoColor=white" />
-  <img src="https://img.shields.io/badge/LLM-OpenRouter-7B42BC?style=for-the-badge&logo=openai&logoColor=white" />
+  <img src="assets/header.svg" width="100%" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Architecture-ReAct_Loop-FF6F00?style=for-the-badge&logo=diagrams.net&logoColor=white" />
-  <img src="https://img.shields.io/badge/Vision-Multimodal-orange?style=for-the-badge&logo=google-lens&logoColor=white" />
-  <img src="https://img.shields.io/badge/Status-Active_Dev-brightgreen?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/SYSTEM-ONLINE-0A0A0A?style=for-the-badge&logo=vercel&logoColor=00FF9C" />
+  <img src="https://img.shields.io/badge/AGENT-AUTONOMOUS-0A0A0A?style=for-the-badge&logo=openai&logoColor=00F0FF" />
+  <img src="https://img.shields.io/badge/STATUS-ACTIVE-0A0A0A?style=for-the-badge&logo=gnometerminal&logoColor=00FFA6" />
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Model--Router-Cheap%20%2F%20Smart-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/Security-A11y--First-red?style=flat-square" />
-  <img src="https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square" />
+  <img src="https://img.shields.io/badge/REACT-LOOP-111111?style=for-the-badge&logo=loop&logoColor=00F0FF" />
+  <img src="https://img.shields.io/badge/VIEWPORT-FIRST-111111?style=for-the-badge&logo=googlechrome&logoColor=00F0FF" />
+  <img src="https://img.shields.io/badge/A11Y-DRIVEN-111111?style=for-the-badge&logo=accessibility&logoColor=00FFA6" />
 </p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/LLM-POWERED-1A1A1A?style=for-the-badge&logo=openai&logoColor=7B61FF" />
+  <img src="https://img.shields.io/badge/MODEL_ROUTER-CHEAP↔SMART-1A1A1A?style=for-the-badge&logo=databricks&logoColor=FF4ECD" />
+  <img src="https://img.shields.io/badge/COST-TRACKED-1A1A1A?style=for-the-badge&logo=coinbase&logoColor=00FFA6" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/PLAYWRIGHT-BROWSER-000000?style=for-the-badge&logo=playwright&logoColor=2EAD33" />
+  <img src="https://img.shields.io/badge/PYTHON-ENGINE-000000?style=for-the-badge&logo=python&logoColor=3776AB" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/SAFETY-GUARDED-000000?style=for-the-badge&logo=shield&logoColor=FFD93D" />
+  <img src="https://img.shields.io/badge/CAPTCHA-HANDLED-000000?style=for-the-badge&logo=cloudflare&logoColor=FF6B00" />
+  <img src="https://img.shields.io/badge/AUTONOMY-HIGH-000000?style=for-the-badge&logo=rocket&logoColor=00F0FF" />
+</p>
+
 
 ---
 
@@ -30,9 +46,13 @@
 - **Учёт стоимости** - `RunCostStats` в `agent/runtime/react_loop/config.py`, регистрация через `register` по тиру и токенам.
 - **Защита по слоям** - self-check подзадачи, crop-verify перед click/type на smart-тире, опциональный goal verify, пауза на опасные действия (см. раздел ниже).
 
-## Demo
+## Demo Video
 
 [Я.Диск: https://disk.yandex.ru/i/ARHtsW7q1BH24Q]
+
+[Я.Диск: https://disk.yandex.ru/i/2bXceiE1n1gvoA] <---- Голосовое управление # 1
+
+[Я.Диск: https://disk.yandex.ru/i/nq8V2sA9KBw4yg] <---- Голосовое управление # 2
 
 ## Архитектура и поток данных
 
@@ -77,6 +97,41 @@ python app.py
 ```
 
 Зависимости из `requirements.txt`: `openai`, `playwright`, `pydantic`, `python-dotenv`, `rich`.
+
+## Voice Mode (Demo)
+
+`Voice Mode` позволяет запускать задачу голосом и получать короткие голосовые подсказки по ходу выполнения.
+
+### Как включить
+
+Добавьте/проверьте в `.env`:
+
+```env
+AGENT_VOICE_MODE=true
+AGENT_VOICE_WAKEWORD=hey_jarvis
+AGENT_VOICE_ACTIVATION_THRESHOLD=0.3
+AGENT_VOICE_SAMPLE_RATE=16000
+AGENT_VOICE_BLOCK_SIZE=1280
+AGENT_VOICE_RECORD_SECONDS=5.0
+AGENT_VOICE_MIN_WORDS=4
+```
+
+### Как это работает
+
+1. Запускаете `python app.py`.
+2. В `voice_mode` агент слушает wakeword (`hey jarvis`).
+3. После активации записывается голосовая команда пользователя.
+4. Команда превращается в текст и передаётся в оркестратор как `user_goal`.
+5. Во время выполнения агент озвучивает:
+   - старт этапа плана;
+   - выбранные действия (кратко);
+   - итог успешного выполнения (по секции «Итог» из final report).
+
+### Замечания
+
+- Если команда слишком короткая (меньше `AGENT_VOICE_MIN_WORDS`), агент попросит повторить.
+- Для более надёжного детекта wakeword можно повысить `AGENT_VOICE_ACTIVATION_THRESHOLD` (например, до `0.4-0.6`).
+- Для длинных команд увеличьте `AGENT_VOICE_RECORD_SECONDS`.
 
 ## Конфигурация
 
