@@ -1,4 +1,22 @@
-![SyncJarvis Logo](assets/logo.png)
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white" />
+  <img src="https://img.shields.io/badge/Playwright-Automated-2EAD33?style=for-the-badge&logo=playwright&logoColor=white" />
+  <img src="https://img.shields.io/badge/LLM-OpenRouter-7B42BC?style=for-the-badge&logo=openai&logoColor=white" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Architecture-ReAct_Loop-FF6F00?style=for-the-badge&logo=diagrams.net&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vision-Multimodal-orange?style=for-the-badge&logo=google-lens&logoColor=white" />
+  <img src="https://img.shields.io/badge/Status-Active_Dev-brightgreen?style=for-the-badge" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Model--Router-Cheap%20%2F%20Smart-blue?style=flat-square" />
+  <img src="https://img.shields.io/badge/Security-A11y--First-red?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square" />
+</p>
+
+---
 
 # SyncJarvis
 
@@ -14,7 +32,7 @@
 
 ## Demo
 
-[Вставьте ссылку на видео здесь]
+[Я.Диск: https://disk.yandex.ru/i/ARHtsW7q1BH24Q]
 
 ## Архитектура и поток данных
 
