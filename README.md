@@ -63,10 +63,6 @@ Use a non-production browser profile and test only on accounts and sites you are
 
 ## Demo
 
-![Safe local fixture flow](assets/safe-local-demo.gif)
-
-The GIF shows the local fixture used by the smoke-test scenario. It contains no account, browser-profile, or external-site data.
-
 The reproducible, safe local demo uses a fixture page with an in-viewport control and a below-the-fold control. Follow [the demo guide](docs/demo.md) before recording or sharing a public demo. Do not use authenticated sessions, customer data, or real purchase flows in recordings.
 
 Additional demonstration recordings:

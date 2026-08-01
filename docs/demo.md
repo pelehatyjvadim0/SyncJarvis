@@ -2,8 +2,6 @@
 
 This guide defines a reproducible demo that can be recorded and shared without exposing personal data or production targets.
 
-The repository includes `assets/safe-local-demo.gif`, a short recording of the fixture-only browser flow. It is not a claim of a live production task or an LLM evaluation.
-
 ## Scenario
 
 Use the local fixture at `tests/fixtures/viewport_scroll.html`. Start a local static server from the repository root:
