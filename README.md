@@ -63,7 +63,11 @@ Use a non-production browser profile and test only on accounts and sites you are
 
 ## Demo
 
-The reproducible, safe local demo uses a fixture page with an in-viewport control and a below-the-fold control. Follow [the demo guide](docs/demo.md) before recording or sharing a public demo. Do not use authenticated sessions, customer data, or real purchase flows in recordings.
+![SyncJarvis browser and console demo](assets/yandex-lavka-demo.png)
+
+Browser and console capture from a SyncJarvis demonstration session.
+
+For a reproducible local fixture flow, follow [the demo guide](docs/demo.md).
 
 Additional demonstration recordings:
 
