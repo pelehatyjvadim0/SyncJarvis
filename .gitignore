@@ -50,8 +50,8 @@ logs/
 # Project runtime outputs
 history/
 .browser-profile/
+.worktrees/
 
 # Playwright artifacts
 test-results/
 playwright-report/
-
