@@ -69,6 +69,12 @@ The GIF shows the local fixture used by the smoke-test scenario. It contains no 
 
 The reproducible, safe local demo uses a fixture page with an in-viewport control and a below-the-fold control. Follow [the demo guide](docs/demo.md) before recording or sharing a public demo. Do not use authenticated sessions, customer data, or real purchase flows in recordings.
 
+Additional demonstration recordings:
+
+- [Browser-agent walkthrough](https://disk.yandex.ru/i/ARHtsW7q1BH24Q)
+- [Voice control demo — part 1](https://disk.yandex.ru/i/2bXceiE1n1gvoA)
+- [Voice control demo — part 2](https://disk.yandex.ru/i/nq8V2sA9KBw4yg)
+
 ## Safety model
 
 Actions marked as dangerous require confirmation. The agent does not claim to solve or bypass CAPTCHAs: it detects likely CAPTCHA or manual-intervention states and pauses the task for the user. Read the full [safety model](docs/safety-model.md) before use.
