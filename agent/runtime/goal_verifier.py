@@ -15,12 +15,12 @@ from typing import Awaitable, Callable
 
 from openai import AsyncOpenAI
 
-logger = logging.getLogger(__name__)
-
 from agent.config.settings import AppSettings
 from agent.llm.prompts.templates import llm_json_output_prohibitions_block, user_goal_verify_vision_instructions_block
 from agent.llm.services.parser import strip_markdown_json_fence
 from agent.tools.browser_executor import BrowserToolExecutor
+
+logger = logging.getLogger(__name__)
 
 
 async def verify_user_goal_satisfied_llm(

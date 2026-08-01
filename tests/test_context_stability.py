@@ -5,7 +5,6 @@ import unittest
 from agent.config.settings import ActorPromptLimits, AgentPricing, AppSettings
 from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement
-from agent.models.task import TaskMode
 from agent.policies.search import SearchPolicy
 from agent.runtime.memory import MemoryGuardView
 from agent.runtime.react_loop.config import LoopConfig
