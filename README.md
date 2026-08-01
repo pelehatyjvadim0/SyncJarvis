@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/header.svg" width="100%" alt="SyncJarvis" />
+</p>
+
 # SyncJarvis
 
 Browser automation agent with safety controls and LLM-guided planning.
