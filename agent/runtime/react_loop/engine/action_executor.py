@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent.config.settings import AppSettings
 from agent.logging.history_logger import HistoryLogger
 from agent.models.action import ActionResult, AgentAction
 from agent.models.observation import InteractiveElement

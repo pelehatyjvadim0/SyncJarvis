@@ -17,11 +17,7 @@ from agent.llm.contracts.actor import (
 )
 from agent.llm.services.fusion_partial_recovery import try_recover_fusion_agent_action
 from agent.llm.services.parser import parse_agent_action_json, strip_markdown_json_fence
-from agent.llm.prompts.actor import (
-    build_actor_prompt,
-    ordered_observation_for_actor_prompt,
-    serialize_observation_window_for_actor_prompt,
-)
+from agent.llm.prompts.actor import build_actor_prompt
 from agent.llm.prompts.templates import (
     fusion_step_thought_contract_block,
     goal_self_check_vision_instructions_block,

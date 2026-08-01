@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 
 from agent.logging.history_logger import HistoryLogger
-from agent.models.action import ActionResult, AgentAction
+from agent.models.action import AgentAction
 from agent.models.observation import InteractiveElement
 from agent.models.plan import Subtask
 from agent.runtime.memory import RuntimeMemory
