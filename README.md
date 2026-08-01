@@ -2,7 +2,7 @@
 
 Browser automation agent with safety controls and LLM-guided planning.
 
-SyncJarvis is an experimental Python project that combines Playwright, viewport screenshots, and accessibility-tree grounding to carry out multi-step browser tasks. It is designed for supervised experimentation: high-impact actions require user confirmation.
+SyncJarvis is an experimental Python project that combines Playwright, viewport screenshots, and accessibility-tree grounding to carry out multi-step browser tasks. It is designed for supervised experimentation: actions marked as dangerous require user confirmation.
 
 ## What it does
 
@@ -63,11 +63,11 @@ Use a non-production browser profile and test only on accounts and sites you are
 
 The GIF shows the local fixture used by the smoke-test scenario. It contains no account, browser-profile, or external-site data.
 
-The reproducible, safe local demo uses a fixture page and a non-sensitive search task. Follow [the demo guide](docs/demo.md) before recording or sharing a public demo. Do not use authenticated sessions, customer data, or real purchase flows in recordings.
+The reproducible, safe local demo uses a fixture page with an in-viewport control and a below-the-fold control. Follow [the demo guide](docs/demo.md) before recording or sharing a public demo. Do not use authenticated sessions, customer data, or real purchase flows in recordings.
 
 ## Safety model
 
-High-impact browser actions require confirmation. The agent does not claim to solve or bypass CAPTCHAs: it detects likely CAPTCHA or manual-intervention states and pauses the task for the user. Read the full [safety model](docs/safety-model.md) before use.
+Actions marked as dangerous require confirmation. The agent does not claim to solve or bypass CAPTCHAs: it detects likely CAPTCHA or manual-intervention states and pauses the task for the user. Read the full [safety model](docs/safety-model.md) before use.
 
 ## Configuration
 

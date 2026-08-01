@@ -14,9 +14,9 @@ python -m http.server 8000
 
 Open `http://127.0.0.1:8000/tests/fixtures/viewport_scroll.html` in a fresh browser profile. Demonstrate only these steps:
 
-1. Start SyncJarvis with a test-only goal such as: “Find the search control and scroll to the visible result section.”
+1. Start SyncJarvis with a test-only goal such as: “Find the in-viewport control and scroll to the below-the-fold control.”
 2. Show the viewport and accessibility-grounded decision in the local console history.
-3. Stop after the visible result section is reached.
+3. Stop after the below-the-fold control is visible.
 
 ## Recording rules
 

@@ -1,6 +1,6 @@
 # Configuration
 
-Copy `.env.example` to `.env` and keep `.env` local. The only required value is an OpenRouter API key.
+Copy `.env.example` to `.env` and keep `.env` local. An OpenRouter API key is required; the model identifier uses the built-in fallback unless you override it.
 
 ## Required
 
